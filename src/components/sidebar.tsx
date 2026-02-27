@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -34,7 +35,6 @@ import {
   BarChart3,
   ChevronsLeft,
   ChevronsRight,
-  Sparkles,
 } from "lucide-react";
 
 interface NavItem {
@@ -100,13 +100,17 @@ function SidebarNav({ collapsed }: { collapsed: boolean }) {
     <div className="flex h-full flex-col bg-slate-800">
       {/* Brand */}
       <div className="flex h-16 items-center gap-3 px-4 border-b border-slate-700/50">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
-          <Sparkles className="h-5 w-5" />
-        </div>
+        <Image
+          src="/logo.png"
+          alt="Signature Cleans"
+          width={36}
+          height={36}
+          className="shrink-0 rounded-lg"
+        />
         {!collapsed && (
           <div className="flex flex-col overflow-hidden">
             <span className="truncate text-sm font-bold text-white tracking-wide">
-              Signature Cleans
+              Signature OS
             </span>
             <span className="truncate text-[11px] text-slate-400">
               CRM Platform

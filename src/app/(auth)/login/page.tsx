@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -53,11 +54,16 @@ export default function LoginPage() {
 
       <div className="relative z-10 w-full max-w-md">
         {/* Branding */}
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-white">
-            Signature Cleans
-          </h1>
-          <p className="mt-1 text-sm font-medium tracking-widest text-[#22c55e] uppercase">
+        <div className="mb-8 flex flex-col items-center">
+          <Image
+            src="/logo.png"
+            alt="Signature Cleans"
+            width={120}
+            height={120}
+            className="mb-4"
+            priority
+          />
+          <p className="text-sm font-medium tracking-widest text-[#22c55e] uppercase">
             Signature OS
           </p>
         </div>
