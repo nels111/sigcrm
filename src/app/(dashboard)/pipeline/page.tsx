@@ -19,7 +19,8 @@ interface PipelineApiResponse {
 }
 
 async function getPipelineData(): Promise<PipelineApiResponse["data"]> {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const port = process.env.PORT || "3000";
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${port}`;
   const res = await fetch(`${baseUrl}/api/deals/pipeline`, {
     cache: "no-store",
   });
