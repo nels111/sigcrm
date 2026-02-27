@@ -121,7 +121,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           select: { id: true, name: true },
         },
         contract: {
-          select: { id: true, contractName: true },
+          select: { id: true, contractName: true, status: true },
+        },
+        subcontractor: {
+          select: { id: true, contactName: true, companyName: true },
         },
       },
     });
@@ -135,6 +138,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json(
           { error: "Task not found" },
           { status: 404 }
+        );
+      }
+      if (error.code === "P2003") {
+        return NextResponse.json(
+          { error: "Foreign key constraint failed — linked record does not exist" },
+          { status: 400 }
         );
       }
     }

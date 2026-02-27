@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { DealStage } from "@prisma/client";
+import { runMobilisationWorkflow } from "@/lib/mobilisation";
 
 // Stage → probability mapping
 const STAGE_PROBABILITY: Record<string, number> = {
@@ -147,9 +148,28 @@ export async function PUT(
       }),
     ]);
 
+    // Trigger mobilisation workflow for ClosedWonRecurring
+    let contract = null;
+    if (stage === "ClosedWonRecurring") {
+      try {
+        contract = await runMobilisationWorkflow(id);
+      } catch (mobilisationError) {
+        console.error("Mobilisation workflow error:", mobilisationError);
+        // Return the deal update success but flag mobilisation failure
+        return NextResponse.json({
+          data: deal,
+          triggerMobilisation: true,
+          mobilisationError: "Mobilisation workflow failed. Contract may need to be created manually.",
+        });
+      }
+    }
+
     return NextResponse.json({
       data: deal,
-      ...(stage === "ClosedWonRecurring" && { triggerMobilisation: true }),
+      ...(stage === "ClosedWonRecurring" && {
+        triggerMobilisation: true,
+        contract,
+      }),
     });
   } catch (error) {
     console.error("PUT /api/deals/[id]/stage error:", error);
