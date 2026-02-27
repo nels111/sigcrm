@@ -169,7 +169,7 @@ export async function GET() {
         FROM deals d
         LEFT JOIN accounts a ON d.account_id = a.id
         WHERE d.deleted_at IS NULL
-          AND d.stage NOT IN ('ClosedWonRecurring', 'ClosedWonOneOff', 'ClosedLostRecurring', 'ClosedLostOneOff')
+          AND d.stage NOT IN ('Closed Won Recurring', 'Closed Won One-Off', 'Closed Lost Recurring', 'Closed Lost One-Off')
           AND COALESCE(d.stage_changed_at, d.created_at) < ${fourteenDaysAgo}
         ORDER BY COALESCE(d.stage_changed_at, d.created_at) ASC
         LIMIT 5
