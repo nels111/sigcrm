@@ -99,14 +99,12 @@ function mapZohoDeal(
 
   // --- Won stages ---
   if (s === "closed won (recurring)") {
-    return { stage: "Closed Won Recurring", dealType: "recurring", probability: 100 };
+    return { stage: "ClosedWonRecurring", dealType: "recurring", probability: 100 };
   }
   if (s === "closed won") {
-    // Zoho distinguishes "Closed Won" from "Closed Won (Recurring)"
-    // so plain "Closed Won" = one-off unless Type says Existing Business
     const isRecurring = !typeIsOneOff && typeIsRecurring;
     return {
-      stage: isRecurring ? "Closed Won Recurring" : "Closed Won One-Off",
+      stage: isRecurring ? "ClosedWonRecurring" : "ClosedWonOneOff",
       dealType: isRecurring ? "recurring" : "one_off",
       probability: 100,
     };
@@ -115,7 +113,7 @@ function mapZohoDeal(
   // --- Lost stages ---
   if (s === "closed lost (recurring)") {
     return {
-      stage: "Closed Lost Recurring",
+      stage: "ClosedLostRecurring",
       dealType: "recurring",
       probability: 0,
       lossReason: "Other",
@@ -124,7 +122,7 @@ function mapZohoDeal(
   if (s === "closed lost to competition") {
     const isRecurring = !typeIsOneOff;
     return {
-      stage: isRecurring ? "Closed Lost Recurring" : "Closed Lost One-Off",
+      stage: isRecurring ? "ClosedLostRecurring" : "ClosedLostOneOff",
       dealType: isRecurring ? "recurring" : "one_off",
       probability: 0,
       lossReason: "Competitor",
@@ -133,7 +131,7 @@ function mapZohoDeal(
   if (s === "closed lost") {
     const isRecurring = !typeIsOneOff;
     return {
-      stage: isRecurring ? "Closed Lost Recurring" : "Closed Lost One-Off",
+      stage: isRecurring ? "ClosedLostRecurring" : "ClosedLostOneOff",
       dealType: isRecurring ? "recurring" : "one_off",
       probability: 0,
       lossReason: "Other",
@@ -142,10 +140,10 @@ function mapZohoDeal(
 
   // --- Active stages ---
   if (s === "qualification") {
-    return { stage: "New Lead", dealType: typeIsOneOff ? "one_off" : "recurring", probability: 10 };
+    return { stage: "NewLead", dealType: typeIsOneOff ? "one_off" : "recurring", probability: 10 };
   }
   if (s === "needs analysis" || s === "appt attended" || s === "site survey booked") {
-    return { stage: "Survey Complete", dealType: typeIsOneOff ? "one_off" : "recurring", probability: 40 };
+    return { stage: "SurveyComplete", dealType: typeIsOneOff ? "one_off" : "recurring", probability: 40 };
   }
   if (
     s === "cleaning boost mail sent" ||
@@ -155,7 +153,7 @@ function mapZohoDeal(
     return { stage: "Contacted", dealType: typeIsOneOff ? "one_off" : "recurring", probability: 20 };
   }
   if (s === "proposal/price quote") {
-    return { stage: "Quote Sent", dealType: typeIsOneOff ? "one_off" : "recurring", probability: 60 };
+    return { stage: "QuoteSent", dealType: typeIsOneOff ? "one_off" : "recurring", probability: 60 };
   }
   if (s === "negotiation/review" || s === "negotiation") {
     return { stage: "Negotiation", dealType: typeIsOneOff ? "one_off" : "recurring", probability: 75 };
@@ -173,22 +171,22 @@ function mapZohoLeadStatus(zohoStatus: string | null): string {
   const s = (zohoStatus || "").toLowerCase().trim();
 
   const mapping: Record<string, string> = {
-    "new lead": "New Lead",
+    "new lead": "NewLead",
     contacted: "Contacted",
     "warm lead": "Contacted",
-    "meeting booked": "Meeting Booked",
-    "incoming call": "Incoming Call",
-    "business won": "Ongoing Customer",
-    "junk lead": "New Lead",
-    "not contacted": "New Lead",
+    "meeting booked": "MeetingBooked",
+    "incoming call": "IncomingCall",
+    "business won": "OngoingCustomer",
+    "junk lead": "NewLead",
+    "not contacted": "NewLead",
     "attempted to contact": "Contacted",
-    "contact in future": "New Lead",
+    "contact in future": "NewLead",
     "pre-qualified": "Contacted",
-    qualified: "Meeting Booked",
-    lost: "New Lead",
+    qualified: "MeetingBooked",
+    lost: "NewLead",
   };
 
-  return mapping[s] || "New Lead";
+  return mapping[s] || "NewLead";
 }
 
 // ---------------------------------------------------------------------------
@@ -200,19 +198,19 @@ function mapZohoLeadSource(zohoSource: string | null): string | null {
   const s = zohoSource.toLowerCase().trim();
 
   const mapping: Record<string, string> = {
-    "landing page": "Landing Page",
+    "landing page": "LandingPage",
     referral: "Referral",
     linkedin: "LinkedIn",
-    "cold call": "Cold Call",
-    "web research": "Web Research",
-    "web download": "Web Research",
-    website: "Web Research",
-    web: "Web Research",
-    advertisement: "Google Ads",
-    "google ads": "Google Ads",
+    "cold call": "ColdCall",
+    "web research": "WebResearch",
+    "web download": "WebResearch",
+    website: "WebResearch",
+    web: "WebResearch",
+    advertisement: "GoogleAds",
+    "google ads": "GoogleAds",
     facebook: "Facebook",
     seminar: "Seminar",
-    "trade show": "Trade Show",
+    "trade show": "TradeShow",
     chat: "Chat",
   };
 
