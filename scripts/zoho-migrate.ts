@@ -111,6 +111,17 @@ async function getAccessToken(): Promise<string> {
 // Zoho API — Fetch All Records (paginated)
 // ---------------------------------------------------------------------------
 
+// Fields we need per module (max 50)
+const MODULE_FIELDS: Record<string, string> = {
+  Accounts: "Account_Name,Phone,Website,Billing_Street,Billing_City,Billing_State,Billing_Code,Industry,Description,Created_Time,Owner",
+  Contacts: "First_Name,Last_Name,Email,Phone,Mobile,Title,Account_Name,Created_Time,Owner",
+  Leads: "Company,First_Name,Last_Name,Email,Phone,Lead_Source,Lead_Status,Industry,Street,City,State,Zip_Code,Description,Owner,Tag,Created_Time",
+  Deals: "Deal_Name,Amount,Stage,Closing_Date,Probability,Account_Name,Contact_Name,Owner,Description,Type,Created_Time",
+  Notes: "Note_Title,Note_Content,Parent_Id,$se_module,Owner,Created_Time",
+  Tasks: "Subject,Description,Status,Priority,Due_Date,What_Id,Who_Id,Owner,Created_Time",
+  Events: "Event_Title,Subject,Description,Start_DateTime,End_DateTime,All_Day_Event,Type,What_Id,Who_Id,Owner,Created_Time",
+};
+
 async function fetchAllRecords(
   accessToken: string,
   module: string
@@ -119,8 +130,11 @@ async function fetchAllRecords(
   let page = 1;
   let hasMore = true;
 
+  const fields = MODULE_FIELDS[module] || "";
+  const fieldsParam = fields ? `&fields=${fields}` : "";
+
   while (hasMore) {
-    const url = `${ZOHO_API_DOMAIN}/crm/v7/${module}?page=${page}&per_page=200`;
+    const url = `${ZOHO_API_DOMAIN}/crm/v7/${module}?page=${page}&per_page=200${fieldsParam}`;
 
     const response = await fetch(url, {
       headers: {
