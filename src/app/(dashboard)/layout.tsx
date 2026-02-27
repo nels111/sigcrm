@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Providers } from "@/components/providers";
 import { Sidebar } from "@/components/sidebar";
 import { TopBar } from "@/components/top-bar";
+import { QuickCapture } from "@/components/quick-capture";
 
 export default function DashboardLayout({
   children,
@@ -35,6 +36,9 @@ export default function DashboardLayout({
           </main>
         </div>
       </div>
+
+      {/* Quick Capture FAB — always visible on dashboard */}
+      <QuickCapture />
     </Providers>
   );
 }
