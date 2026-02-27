@@ -254,6 +254,211 @@ function mapIndustry(zohoIndustry: string | null): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Resolve Zoho Owner email to our User UUID
+// ---------------------------------------------------------------------------
+
+const userEmailToId = new Map<string, string>();
+
+async function loadUsers(): Promise<void> {
+  const users = await prisma.user.findMany({
+    select: { id: true, email: true },
+  });
+  for (const u of users) {
+    userEmailToId.set(u.email.toLowerCase(), u.id);
+  }
+}
+
+function resolveOwner(owner: any): string | undefined {
+  if (!owner?.email) return undefined;
+  return userEmailToId.get(owner.email.toLowerCase());
+}
+
+// ---------------------------------------------------------------------------
+// Fix Accounts — Backfill missing industry, phone, etc.
+// ---------------------------------------------------------------------------
+
+async function fixAccounts(token: string): Promise<void> {
+  console.log("\n=== FIXING ACCOUNTS ===\n");
+
+  const zohoAccounts = await fetchAll(
+    token,
+    "Accounts",
+    "Account_Name,Phone,Website,Billing_Street,Billing_City,Billing_State,Billing_Code,Industry,Description,Owner"
+  );
+
+  console.log(`Fetched ${zohoAccounts.length} accounts from Zoho\n`);
+
+  let updated = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const za of zohoAccounts) {
+    try {
+      const name = za.Account_Name;
+      if (!name) { skipped++; continue; }
+
+      const existing = await prisma.account.findFirst({
+        where: { name: { equals: name, mode: "insensitive" } },
+      });
+
+      if (!existing) { skipped++; continue; }
+
+      const industry = mapIndustry(za.Industry);
+      const updateData: any = {};
+      let changed = false;
+
+      if (za.Phone && !existing.phone) {
+        updateData.phone = za.Phone;
+        changed = true;
+      }
+      if (za.Website && !existing.website) {
+        updateData.website = za.Website;
+        changed = true;
+      }
+      if (industry && !existing.industry) {
+        updateData.industry = industry;
+        changed = true;
+      }
+      if (za.Description && !existing.notes) {
+        updateData.notes = za.Description;
+        changed = true;
+      }
+
+      // Build address from billing fields
+      const parts = [za.Billing_Street, za.Billing_City, za.Billing_State, za.Billing_Code]
+        .filter((p: string | null) => p && p.trim());
+      if (parts.length > 0 && !existing.address) {
+        updateData.address = parts.join(", ");
+        changed = true;
+      }
+      if (za.Billing_City && !existing.city) {
+        updateData.city = za.Billing_City;
+        changed = true;
+      }
+      if (za.Billing_Code && !existing.postcode) {
+        updateData.postcode = za.Billing_Code;
+        changed = true;
+      }
+
+      if (!changed) { skipped++; continue; }
+
+      await prisma.account.update({
+        where: { id: existing.id },
+        data: updateData,
+      });
+
+      console.log(
+        `  UPDATED: ${name} → ${Object.keys(updateData).join(", ")}`
+      );
+      updated++;
+    } catch (err: any) {
+      console.error(`  ERROR: ${za.Account_Name}: ${err.message}`);
+      errors++;
+    }
+  }
+
+  console.log(
+    `\nAccounts: ${updated} updated, ${skipped} skipped, ${errors} errors`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Fix Contacts — Backfill missing fields
+// ---------------------------------------------------------------------------
+
+async function fixContacts(token: string): Promise<void> {
+  console.log("\n=== FIXING CONTACTS ===\n");
+
+  const zohoContacts = await fetchAll(
+    token,
+    "Contacts",
+    "First_Name,Last_Name,Email,Phone,Mobile,Title,Department,Account_Name,Mailing_Street,Mailing_City,Owner"
+  );
+
+  console.log(`Fetched ${zohoContacts.length} contacts from Zoho\n`);
+
+  // Build account name → id lookup
+  const accounts = await prisma.account.findMany({ select: { id: true, name: true } });
+  const accountNameToId = new Map<string, string>();
+  for (const a of accounts) {
+    accountNameToId.set(a.name.toLowerCase(), a.id);
+  }
+
+  let updated = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const zc of zohoContacts) {
+    try {
+      const lastName = zc.Last_Name;
+      if (!lastName) { skipped++; continue; }
+
+      // Find matching contact
+      let existing;
+      if (zc.Email) {
+        existing = await prisma.contact.findFirst({
+          where: { email: { equals: zc.Email, mode: "insensitive" } },
+        });
+      }
+      if (!existing) {
+        existing = await prisma.contact.findFirst({
+          where: {
+            lastName: { equals: lastName, mode: "insensitive" },
+            firstName: { equals: zc.First_Name || null, mode: "insensitive" },
+          },
+        });
+      }
+
+      if (!existing) { skipped++; continue; }
+
+      const updateData: any = {};
+      let changed = false;
+
+      if (zc.Phone && !existing.phone) {
+        updateData.phone = zc.Phone;
+        changed = true;
+      }
+      if (zc.Mobile && !existing.mobile) {
+        updateData.mobile = zc.Mobile;
+        changed = true;
+      }
+      if (zc.Title && !existing.jobTitle) {
+        updateData.jobTitle = zc.Title;
+        changed = true;
+      }
+
+      // Link to account if not already linked
+      if (!existing.accountId && zc.Account_Name?.name) {
+        const accountId = accountNameToId.get(zc.Account_Name.name.toLowerCase());
+        if (accountId) {
+          updateData.accountId = accountId;
+          changed = true;
+        }
+      }
+
+      if (!changed) { skipped++; continue; }
+
+      await prisma.contact.update({
+        where: { id: existing.id },
+        data: updateData,
+      });
+
+      console.log(
+        `  UPDATED: ${zc.First_Name || ""} ${lastName} → ${Object.keys(updateData).join(", ")}`
+      );
+      updated++;
+    } catch (err: any) {
+      console.error(`  ERROR: ${zc.Last_Name}: ${err.message}`);
+      errors++;
+    }
+  }
+
+  console.log(
+    `\nContacts: ${updated} updated, ${skipped} skipped, ${errors} errors`
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Fix Deals
 // ---------------------------------------------------------------------------
 
@@ -479,6 +684,10 @@ async function main(): Promise<void> {
   const token = await getAccessToken();
   console.log("Authenticated with Zoho.\n");
 
+  await loadUsers();
+
+  await fixAccounts(token);
+  await fixContacts(token);
   await fixDeals(token);
   await fixLeads(token);
 
