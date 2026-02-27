@@ -3,11 +3,11 @@ module.exports = {
     {
       name: "signature-os",
       script: "node_modules/.bin/next",
-      args: "start -p 3000",
+      args: "start -p 3003",
       cwd: "/var/www/sigcrm",
       env: {
         NODE_ENV: "production",
-        PORT: 3000,
+        PORT: 3003,
       },
       instances: 1,
       autorestart: true,
