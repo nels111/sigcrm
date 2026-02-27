@@ -19,7 +19,7 @@ try {
 }
 
 function shouldRunCrons(): boolean {
-  if (process.env.NODE_ENV === "production") return true;
+  // Crons are OFF by default. Set ENABLE_CRONS=true in .env to activate.
   if (process.env.ENABLE_CRONS === "true") return true;
   return false;
 }
