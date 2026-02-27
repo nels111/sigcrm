@@ -73,6 +73,12 @@ export async function GET() {
       }),
     ]);
 
+    const cellMeta: Record<CellType, { label: string; hoursRange: string }> = {
+      A: { label: "Light Touch", hoursRange: "1–15 hrs/wk" },
+      B: { label: "Moderate", hoursRange: "16–30 hrs/wk" },
+      C: { label: "Full Blueprint", hoursRange: "31+ hrs/wk" },
+    };
+
     // Build cell groups
     const cells = cellTypes.map((cellType) => {
       // Filter contracts for this cell
@@ -94,37 +100,22 @@ export async function GET() {
         return classifyCellType(wh) === cellType;
       });
 
-      const pipelineCount = cellPipeline.length;
-      const pipelineHours = cellPipeline.reduce(
-        (sum, d) => sum + Number(d.weeklyHours),
-        0
-      );
-      const pipelineMonthlyValue = cellPipeline.reduce(
-        (sum, d) => sum + (d.monthlyValue ? Number(d.monthlyValue) : 0),
-        0
-      );
-
       return {
         cellType,
-        summary: {
-          totalContracts,
-          totalHours: parseFloat(totalHours.toFixed(1)),
-          totalMonthlyRevenue: parseFloat(totalMonthlyRevenue.toFixed(2)),
-        },
-        pipeline: {
-          count: pipelineCount,
-          totalHours: parseFloat(pipelineHours.toFixed(1)),
-          totalMonthlyValue: parseFloat(pipelineMonthlyValue.toFixed(2)),
-          deals: cellPipeline.map((d) => ({
-            id: d.id,
-            name: d.name,
-            weeklyHours: Number(d.weeklyHours),
-            monthlyValue: d.monthlyValue ? Number(d.monthlyValue) : null,
-            stage: d.stage,
-            probability: d.probability,
-            account: d.account,
-          })),
-        },
+        label: cellMeta[cellType].label,
+        hoursRange: cellMeta[cellType].hoursRange,
+        totalContracts,
+        totalHours: parseFloat(totalHours.toFixed(1)),
+        totalMonthlyRevenue: parseFloat(totalMonthlyRevenue.toFixed(2)),
+        pipeline: cellPipeline.map((d) => ({
+          id: d.id,
+          name: d.name,
+          weeklyHours: Number(d.weeklyHours),
+          monthlyValue: d.monthlyValue ? Number(d.monthlyValue) : null,
+          stage: d.stage,
+          probability: d.probability,
+          account: d.account,
+        })),
         contracts: cellContracts.map((c) => ({
           id: c.id,
           contractName: c.contractName,

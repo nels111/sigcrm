@@ -49,7 +49,7 @@ interface PipelineDeal {
 interface CellData {
   cellType: string;
   label: string;
-  visitsRange: string;
+  hoursRange: string;
   totalContracts: number;
   totalHours: number;
   totalMonthlyRevenue: number;
@@ -173,7 +173,7 @@ export default function CellDashboardPage() {
       const res = await fetch("/api/contracts/cells");
       if (!res.ok) throw new Error("Failed to fetch cells");
       const json = await res.json();
-      setCells(json.data);
+      setCells(json.data.cells);
     } catch {
       toast({
         title: "Error",
@@ -239,7 +239,7 @@ export default function CellDashboardPage() {
                       Cell {cell.cellType}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
-                      {cell.visitsRange}
+                      {cell.hoursRange}
                     </span>
                   </div>
                 </div>

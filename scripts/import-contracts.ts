@@ -97,9 +97,9 @@ const SKIP_NAMES = new Set([
 
 type CellType = "A" | "B" | "C";
 
-function calculateCellType(visitsPerWeek: number): CellType {
-  if (visitsPerWeek <= 15) return "A";
-  if (visitsPerWeek <= 30) return "B";
+function calculateCellType(weeklyHours: number): CellType {
+  if (weeklyHours <= 15) return "A";
+  if (weeklyHours <= 30) return "B";
   return "C";
 }
 
@@ -306,7 +306,7 @@ async function main() {
 
       // Calculate derived fields
       const siteType = mapSiteType(row.typeOfClean);
-      const cellType = calculateCellType(row.visitsPerWeek);
+      const cellType = calculateCellType(row.weeklyHours);
       const unitId = await generateUnitId(cellType);
       const auditFrequency = getAuditFrequency(cellType);
       const supervisorHoursAlloc =

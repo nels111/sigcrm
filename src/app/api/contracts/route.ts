@@ -6,9 +6,9 @@ import { Prisma, CellType, ContractStatus, HealthStatus, SiteType } from "@prism
 // HELPERS
 // ──────────────────────────────────────────────
 
-function calculateCellType(visitsPerWeek: number): CellType {
-  if (visitsPerWeek <= 15) return "A";
-  if (visitsPerWeek <= 30) return "B";
+function calculateCellType(weeklyHours: number): CellType {
+  if (weeklyHours <= 15) return "A";
+  if (weeklyHours <= 30) return "B";
   return "C";
 }
 
@@ -207,8 +207,8 @@ export async function POST(request: NextRequest) {
       ? parseFloat(body.labourRatePerHour)
       : 17;
 
-    // Auto-calculate cellType from visitsPerWeek
-    const cellType = calculateCellType(visitsPerWeek);
+    // Auto-calculate cellType from weeklyHours
+    const cellType = calculateCellType(weeklyHours);
     const unitId = await generateUnitId(cellType);
     const auditFrequency = getAuditFrequency(cellType);
     const supervisorHoursAlloc =

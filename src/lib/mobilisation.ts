@@ -8,10 +8,10 @@ import { CellType } from "@prisma/client";
 const LABOUR_RATE_PER_HOUR = 17;
 const WEEKS_PER_MONTH = 4.33;
 
-// Cell type classification based on visits per week
-function calculateCellType(visitsPerWeek: number): CellType {
-  if (visitsPerWeek <= 15) return "A";
-  if (visitsPerWeek <= 30) return "B";
+// Cell type classification based on weekly hours
+function calculateCellType(weeklyHours: number): CellType {
+  if (weeklyHours <= 15) return "A";
+  if (weeklyHours <= 30) return "B";
   return "C";
 }
 
@@ -131,7 +131,7 @@ export async function runMobilisationWorkflow(dealId: string) {
   const visitsPerWeek = quote.frequencyPerWeek;
   const hoursPerDay = Number(quote.hoursPerDay);
   const weeklyHours = hoursPerDay * visitsPerWeek;
-  const cellType = calculateCellType(visitsPerWeek);
+  const cellType = calculateCellType(weeklyHours);
   const unitId = await generateUnitId(cellType);
 
   const weeklyCharge = Number(quote.weeklyCharge);
