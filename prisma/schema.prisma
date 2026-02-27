@@ -1,0 +1,1064 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────
+// USERS & AUTH
+// ──────────────────────────────────────────────
+
+model User {
+  id                 String    @id @default(uuid()) @db.Uuid
+  email              String    @unique @db.VarChar(255)
+  passwordHash       String    @map("password_hash") @db.VarChar(255)
+  name               String    @db.VarChar(255)
+  role               UserRole
+  avatarUrl          String?   @map("avatar_url") @db.VarChar(500)
+  emailSignature     String?   @map("email_signature")
+  ionosEmail         String?   @map("ionos_email") @db.VarChar(255)
+  notificationsEmail Boolean   @default(true) @map("notifications_email")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  assignedLeads      Lead[]       @relation("LeadAssignee")
+  assignedDeals      Deal[]       @relation("DealAssignee")
+  assignedTasks      Task[]       @relation("TaskAssignee")
+  createdTasks       Task[]       @relation("TaskCreator")
+  createdEvents      CalendarEvent[] @relation("EventCreator")
+  activities         Activity[]   @relation("ActivityPerformer")
+  audits             Audit[]      @relation("Auditor")
+  assignedIssues     Issue[]      @relation("IssueAssignee")
+  notifications      Notification[]
+  documents          Document[]   @relation("DocumentCreator")
+
+  @@map("users")
+}
+
+enum UserRole {
+  admin
+  sales
+  operations
+}
+
+// ──────────────────────────────────────────────
+// ACCOUNTS
+// ──────────────────────────────────────────────
+
+model Account {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String    @db.VarChar(255)
+  address     String?
+  city        String?   @db.VarChar(100)
+  county      String?   @db.VarChar(100)
+  postcode    String?   @db.VarChar(20)
+  phone       String?   @db.VarChar(50)
+  website     String?   @db.VarChar(255)
+  industry    Industry?
+  isProtected Boolean   @default(false) @map("is_protected")
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+
+  // Relations
+  contacts       Contact[]
+  deals          Deal[]
+  contracts      Contract[]
+  activities     Activity[]
+  emails         Email[]
+  calendarEvents CalendarEvent[]
+  tasks          Task[]
+  issues         Issue[]
+  documents      Document[]
+  convertedLeads Lead[]    @relation("LeadConvertedAccount")
+
+  @@map("accounts")
+}
+
+enum Industry {
+  PBSA
+  PostConstruction       @map("Post Construction")
+  BioHazard              @map("Bio Hazard")
+  Industrial
+  CommercialOffices      @map("Commercial Offices")
+  CareSector             @map("Care Sector")
+  School
+  Leisure
+  CommercialGeneral      @map("Commercial (General)")
+  DentalMedical          @map("Dental/Medical")
+  HospitalityVenue       @map("Hospitality/Venue")
+  WelfareConstruction    @map("Welfare/Construction")
+}
+
+// ──────────────────────────────────────────────
+// CONTACTS
+// ──────────────────────────────────────────────
+
+model Contact {
+  id         String    @id @default(uuid()) @db.Uuid
+  accountId  String?   @map("account_id") @db.Uuid
+  firstName  String?   @map("first_name") @db.VarChar(100)
+  lastName   String    @map("last_name") @db.VarChar(100)
+  email      String?   @db.VarChar(255)
+  phone      String?   @db.VarChar(50)
+  mobile     String?   @db.VarChar(50)
+  jobTitle   String?   @map("job_title") @db.VarChar(100)
+  isPrimary  Boolean   @default(false) @map("is_primary")
+  notes      String?
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
+
+  // Relations
+  account        Account?        @relation(fields: [accountId], references: [id])
+  deals          Deal[]
+  activities     Activity[]
+  emails         Email[]
+  calendarEvents CalendarEvent[]
+  tasks          Task[]
+  convertedLeads Lead[]          @relation("LeadConvertedContact")
+
+  @@map("contacts")
+}
+
+// ──────────────────────────────────────────────
+// LEADS
+// ──────────────────────────────────────────────
+
+model Lead {
+  id               String        @id @default(uuid()) @db.Uuid
+  companyName      String        @map("company_name") @db.VarChar(255)
+  address          String?
+  contactName      String        @map("contact_name") @db.VarChar(255)
+  contactEmail     String?       @map("contact_email") @db.VarChar(255)
+  contactPhone     String?       @map("contact_phone") @db.VarChar(50)
+  leadStatus       LeadStatus    @default(NewLead) @map("lead_status")
+  engagementStage  EngagementStage @default(NeverEngaged) @map("engagement_stage")
+  leadSource       LeadSource?   @map("lead_source")
+  industry         Industry?
+  // UTM tracking
+  utmSource        String?       @map("utm_source") @db.VarChar(100)
+  utmMedium        String?       @map("utm_medium") @db.VarChar(100)
+  utmCampaign      String?       @map("utm_campaign") @db.VarChar(100)
+  utmTerm          String?       @map("utm_term") @db.VarChar(100)
+  utmContent       String?       @map("utm_content") @db.VarChar(100)
+  // Cadence tracking
+  cadenceStatus    CadenceStatus @default(NotStarted) @map("cadence_status")
+  cadenceStep      Int           @default(0) @map("cadence_step")
+  lastCadenceEmailAt DateTime?   @map("last_cadence_email_at") @db.Timestamptz
+  // Tags
+  tags             String[]      @default([])
+  // Assignment
+  assignedTo       String?       @map("assigned_to") @db.Uuid
+  convertedToAccountId String?   @map("converted_to_account_id") @db.Uuid
+  convertedToContactId String?   @map("converted_to_contact_id") @db.Uuid
+  convertedToDealId    String?   @map("converted_to_deal_id") @db.Uuid
+  notes            String?
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt        DateTime?     @map("deleted_at") @db.Timestamptz
+
+  // Relations
+  assignee           User?    @relation("LeadAssignee", fields: [assignedTo], references: [id])
+  convertedAccount   Account? @relation("LeadConvertedAccount", fields: [convertedToAccountId], references: [id])
+  convertedContact   Contact? @relation("LeadConvertedContact", fields: [convertedToContactId], references: [id])
+  convertedDeal      Deal?    @relation("LeadConvertedDeal", fields: [convertedToDealId], references: [id])
+  deals              Deal[]   @relation("DealLead")
+  quotes             Quote[]
+  activities         Activity[]
+  emails             Email[]
+  tasks              Task[]
+  documents          Document[]
+
+  @@map("leads")
+}
+
+enum LeadStatus {
+  NewLead           @map("New Lead")
+  Contacted
+  MeetingBooked     @map("Meeting Booked")
+  MeetingAttended   @map("Meeting Attended")
+  IncomingCall      @map("Incoming Call")
+  QuoteSent         @map("Quote Sent")
+  QuoteAccepted     @map("Quote Accepted")
+  QuoteRejected     @map("Quote Rejected")
+  FollowUpSent      @map("Follow Up Sent")
+  PreviousCustomer  @map("Previous Customer")
+  OngoingCustomer   @map("Ongoing Customer")
+}
+
+enum EngagementStage {
+  NeverEngaged   @map("Never Engaged")
+  ColdProspect   @map("Cold Prospect")
+  WarmProspect   @map("Warm Prospect")
+  HotLead        @map("Hot Lead")
+  MeetingBooked  @map("Meeting Booked")
+  Quoted
+  Negotiating
+  CurrentOngoing @map("Current Ongoing")
+  WorkCeased     @map("Work Ceased")
+}
+
+enum LeadSource {
+  LandingPage    @map("Landing Page")
+  ColdCall       @map("Cold Call")
+  Referral
+  NetworkEvent   @map("Network Event")
+  ApolloAI       @map("Apollo AI")
+  LinkedIn
+  Facebook
+  XTwitter       @map("X (Twitter)")
+  WebResearch    @map("Web Research")
+  Chat
+  GoogleAds      @map("Google Ads")
+  Seminar
+  TradeShow      @map("Trade Show")
+  QuickCapture   @map("Quick Capture")
+  QuoteForm      @map("Quote Form")
+}
+
+enum CadenceStatus {
+  NotStarted          @map("Not Started")
+  ActiveInCadence     @map("Active in Cadence")
+  PausedMeeting       @map("Paused - Meeting Scheduled")
+  PausedReplied       @map("Paused - Replied")
+  StoppedActiveClient @map("Stopped - Active Client")
+  StoppedUnsubscribed @map("Stopped - Unsubscribed")
+  CompletedNoResponse @map("Completed - No Response")
+  LongTermNurture     @map("Long Term Nurture")
+}
+
+// ──────────────────────────────────────────────
+// DEALS
+// ──────────────────────────────────────────────
+
+model Deal {
+  id                String      @id @default(uuid()) @db.Uuid
+  name              String      @db.VarChar(255)
+  accountId         String?     @map("account_id") @db.Uuid
+  contactId         String?     @map("contact_id") @db.Uuid
+  leadId            String?     @map("lead_id") @db.Uuid
+  stage             DealStage   @default(NewLead)
+  probability       Int         @default(5)
+  amount            Decimal?    @db.Decimal(10, 2)
+  monthlyValue      Decimal?    @map("monthly_value") @db.Decimal(10, 2)
+  weeklyValue       Decimal?    @map("weekly_value") @db.Decimal(10, 2)
+  dealType          DealType    @default(recurring) @map("deal_type")
+  cellType          CellType?   @map("cell_type")
+  weeklyHours       Decimal?    @map("weekly_hours") @db.Decimal(5, 1)
+  expectedCloseDate DateTime?   @map("expected_close_date") @db.Date
+  actualCloseDate   DateTime?   @map("actual_close_date") @db.Date
+  lossReason        LossReason? @map("loss_reason")
+  lossNotes         String?     @map("loss_notes")
+  assignedTo        String?     @map("assigned_to") @db.Uuid
+  notes             String?
+  stageChangedAt    DateTime    @default(now()) @map("stage_changed_at") @db.Timestamptz
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt         DateTime?   @map("deleted_at") @db.Timestamptz
+
+  // Relations
+  account        Account?        @relation(fields: [accountId], references: [id])
+  contact        Contact?        @relation(fields: [contactId], references: [id])
+  lead           Lead?           @relation("DealLead", fields: [leadId], references: [id])
+  assignee       User?           @relation("DealAssignee", fields: [assignedTo], references: [id])
+  quotes         Quote[]
+  contracts      Contract[]
+  activities     Activity[]
+  emails         Email[]
+  calendarEvents CalendarEvent[]
+  tasks          Task[]
+  documents      Document[]
+  convertedFromLeads Lead[]      @relation("LeadConvertedDeal")
+
+  @@map("deals")
+}
+
+enum DealStage {
+  NewLead            @map("New Lead")
+  Contacted
+  SiteSurveyBooked   @map("Site Survey Booked")
+  SurveyComplete     @map("Survey Complete")
+  QuoteSent          @map("Quote Sent")
+  Negotiation
+  ClosedWonRecurring @map("Closed Won Recurring")
+  ClosedWonOneOff    @map("Closed Won One-Off")
+  ClosedLostRecurring @map("Closed Lost Recurring")
+  ClosedLostOneOff   @map("Closed Lost One-Off")
+}
+
+enum DealType {
+  recurring
+  one_off
+}
+
+enum CellType {
+  A
+  B
+  C
+}
+
+enum LossReason {
+  Price
+  Quality
+  ChangeOfProvider @map("Change of Provider")
+  BusinessClosed   @map("Business Closed")
+  BudgetCuts       @map("Budget Cuts")
+  NoResponse       @map("No Response")
+  Competitor
+  Other
+}
+
+// ──────────────────────────────────────────────
+// QUOTES
+// ──────────────────────────────────────────────
+
+model Quote {
+  id                    String    @id @default(uuid()) @db.Uuid
+  dealId                String?   @map("deal_id") @db.Uuid
+  leadId                String?   @map("lead_id") @db.Uuid
+  quoteRef              String    @map("quote_ref") @db.VarChar(50)
+  // Form inputs
+  companyName           String    @map("company_name") @db.VarChar(255)
+  address               String
+  contactName           String    @map("contact_name") @db.VarChar(255)
+  contactEmail          String    @map("contact_email") @db.VarChar(255)
+  contactPhone          String?   @map("contact_phone") @db.VarChar(50)
+  hoursPerDay           Decimal   @map("hours_per_day") @db.Decimal(4, 1)
+  frequencyPerWeek      Int       @map("frequency_per_week")
+  daysSelected          String[]  @map("days_selected")
+  siteType              SiteType  @map("site_type")
+  marginPercent         Decimal   @map("margin_percent") @db.Decimal(5, 2)
+  productCostWeekly     Decimal   @default(0) @map("product_cost_weekly") @db.Decimal(8, 2)
+  overheadCostWeekly    Decimal   @default(0) @map("overhead_cost_weekly") @db.Decimal(8, 2)
+  applyPilotPricing     Boolean   @default(false) @map("apply_pilot_pricing")
+  // Calculated values
+  hourlyRate            Decimal   @default(17.00) @map("hourly_rate") @db.Decimal(6, 2)
+  weeklyLabourCost      Decimal   @map("weekly_labour_cost") @db.Decimal(8, 2)
+  totalWeeklySpend      Decimal   @map("total_weekly_spend") @db.Decimal(8, 2)
+  weeklyCharge          Decimal   @map("weekly_charge") @db.Decimal(8, 2)
+  monthlyTotal          Decimal   @map("monthly_total") @db.Decimal(8, 2)
+  annualTotal           Decimal   @map("annual_total") @db.Decimal(10, 2)
+  weeklyProfit          Decimal   @map("weekly_profit") @db.Decimal(8, 2)
+  monthlyProfit         Decimal   @map("monthly_profit") @db.Decimal(8, 2)
+  // Pilot pricing
+  pilotMonthlyTotal     Decimal?  @map("pilot_monthly_total") @db.Decimal(8, 2)
+  pilotSavings          Decimal?  @map("pilot_savings") @db.Decimal(8, 2)
+  pilotStartDate        DateTime? @map("pilot_start_date") @db.Date
+  pilotEndDate          DateTime? @map("pilot_end_date") @db.Date
+  pilotReviewDate       DateTime? @map("pilot_review_date") @db.Date
+  standardPricingStartDate DateTime? @map("standard_pricing_start_date") @db.Date
+  // Scope
+  scopeOfWorks          String    @map("scope_of_works")
+  // Document
+  pdfPath               String?   @map("pdf_path") @db.VarChar(500)
+  pdfUrl                String?   @map("pdf_url") @db.VarChar(500)
+  templateUsed          String?   @map("template_used") @db.VarChar(20)
+  // Status
+  status                QuoteStatus @default(draft)
+  sentAt                DateTime?   @map("sent_at") @db.Timestamptz
+  acceptedAt            DateTime?   @map("accepted_at") @db.Timestamptz
+  rejectedAt            DateTime?   @map("rejected_at") @db.Timestamptz
+  // Follow-up tracking
+  followUpCount         Int       @default(0) @map("follow_up_count")
+  lastFollowUpAt        DateTime? @map("last_follow_up_at") @db.Timestamptz
+  nextFollowUpAt        DateTime? @map("next_follow_up_at") @db.Timestamptz
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  deal      Deal?      @relation(fields: [dealId], references: [id])
+  lead      Lead?      @relation(fields: [leadId], references: [id])
+  contracts Contract[]
+  documents Document[]
+
+  @@map("quotes")
+}
+
+enum SiteType {
+  OfficeCommercial       @map("Office/Commercial")
+  WelfareConstruction    @map("Welfare/Construction")
+  HospitalityVenue       @map("Hospitality/Venue")
+  EducationInstitutional @map("Education/Institutional")
+  SpecialistIndustrial   @map("Specialist/Industrial")
+  DentalMedical          @map("Dental/Medical")
+}
+
+enum QuoteStatus {
+  draft
+  sent
+  accepted
+  rejected
+  expired
+}
+
+// ──────────────────────────────────────────────
+// CONTRACTS
+// ──────────────────────────────────────────────
+
+model Contract {
+  id                    String          @id @default(uuid()) @db.Uuid
+  dealId                String?         @map("deal_id") @db.Uuid
+  accountId             String?         @map("account_id") @db.Uuid
+  quoteId               String?         @map("quote_id") @db.Uuid
+  contractName          String          @map("contract_name") @db.VarChar(255)
+  unitId                String?         @map("unit_id") @db.VarChar(10)
+  cellType              CellType        @map("cell_type")
+  status                ContractStatus  @default(mobilising)
+  // Schedule
+  weeklyHours           Decimal         @map("weekly_hours") @db.Decimal(5, 1)
+  visitsPerWeek         Int             @map("visits_per_week")
+  hoursPerVisit         Decimal         @map("hours_per_visit") @db.Decimal(4, 1)
+  daysSelected          String[]        @map("days_selected")
+  siteType              SiteType        @map("site_type")
+  // Financials
+  sellRatePerHour       Decimal         @map("sell_rate_per_hour") @db.Decimal(6, 2)
+  labourRatePerHour     Decimal         @map("labour_rate_per_hour") @db.Decimal(6, 2)
+  weeklyRevenue         Decimal         @map("weekly_revenue") @db.Decimal(8, 2)
+  monthlyRevenue        Decimal         @map("monthly_revenue") @db.Decimal(8, 2)
+  annualValue           Decimal         @map("annual_value") @db.Decimal(10, 2)
+  weeklyLabourCost      Decimal         @map("weekly_labour_cost") @db.Decimal(8, 2)
+  monthlyLabourCost     Decimal         @map("monthly_labour_cost") @db.Decimal(8, 2)
+  consumablesPercent    Decimal         @default(5.00) @map("consumables_percent") @db.Decimal(4, 2)
+  grossMarginPercent    Decimal         @map("gross_margin_percent") @db.Decimal(5, 2)
+  // Supervision
+  supervisorHoursAlloc  Decimal?        @map("supervisor_hours_alloc") @db.Decimal(5, 2)
+  supervisorRate        Decimal         @default(18.00) @map("supervisor_rate") @db.Decimal(6, 2)
+  // Dates
+  startDate             DateTime?       @map("start_date") @db.Date
+  endDate               DateTime?       @map("end_date") @db.Date
+  renewalDate           DateTime?       @map("renewal_date") @db.Date
+  noticePeriodDays      Int             @default(30) @map("notice_period_days")
+  // Pilot
+  isPilot               Boolean         @default(false) @map("is_pilot")
+  pilotEndDate          DateTime?       @map("pilot_end_date") @db.Date
+  pilotMonthlyRate      Decimal?        @map("pilot_monthly_rate") @db.Decimal(8, 2)
+  standardMonthlyRate   Decimal?        @map("standard_monthly_rate") @db.Decimal(8, 2)
+  // Team
+  teamLead              String?         @map("team_lead") @db.VarChar(100)
+  subcontractorId       String?         @map("subcontractor_id") @db.Uuid
+  // Quality
+  latestAuditScore      Decimal         @default(85.0) @map("latest_audit_score") @db.Decimal(4, 1)
+  previousAuditScore    Decimal         @default(85.0) @map("previous_audit_score") @db.Decimal(4, 1)
+  auditFrequency        String?         @map("audit_frequency") @db.VarChar(20)
+  nextAuditDate         DateTime?       @map("next_audit_date") @db.Date
+  // Health
+  healthStatus          HealthStatus    @default(GREEN) @map("health_status")
+  daysSinceLastContact  Int             @default(0) @map("days_since_last_contact")
+  complaintCount        Int             @default(0) @map("complaint_count")
+  staffingStatus        StaffingStatus  @default(Stable) @map("staffing_status")
+  // Onboarding
+  onboardingComplete    Boolean         @default(false) @map("onboarding_complete")
+  onboardingStage       String          @default("mobilising") @map("onboarding_stage") @db.VarChar(50)
+  // Site pack
+  sitePackPath          String?         @map("site_pack_path") @db.VarChar(500)
+  // Payment
+  paymentTerms          String          @default("Monthly in advance") @map("payment_terms") @db.VarChar(50)
+  signedTcs             Boolean         @default(false) @map("signed_tcs")
+  signedTcsDate         DateTime?       @map("signed_tcs_date") @db.Date
+  // Exit
+  exitReason            String?         @map("exit_reason") @db.VarChar(100)
+  exitNotes             String?         @map("exit_notes")
+  notes                 String?
+  createdAt             DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt             DateTime?       @map("deleted_at") @db.Timestamptz
+
+  // Relations
+  deal           Deal?           @relation(fields: [dealId], references: [id])
+  account        Account?        @relation(fields: [accountId], references: [id])
+  quote          Quote?          @relation(fields: [quoteId], references: [id])
+  subcontractor  Subcontractor?  @relation(fields: [subcontractorId], references: [id])
+  audits         Audit[]
+  issues         Issue[]
+  activities     Activity[]
+  calendarEvents CalendarEvent[]
+  tasks          Task[]
+  documents      Document[]
+
+  @@map("contracts")
+}
+
+enum ContractStatus {
+  mobilising
+  active
+  on_hold
+  notice_given
+  terminated
+  archived
+}
+
+enum HealthStatus {
+  GREEN
+  AMBER
+  RED
+}
+
+enum StaffingStatus {
+  Stable
+  Risk
+  Critical
+}
+
+// ──────────────────────────────────────────────
+// SUBCONTRACTORS
+// ──────────────────────────────────────────────
+
+model Subcontractor {
+  id                          String    @id @default(uuid()) @db.Uuid
+  companyName                 String?   @map("company_name") @db.VarChar(255)
+  contactName                 String    @map("contact_name") @db.VarChar(255)
+  email                       String?   @db.VarChar(255)
+  phone                       String?   @db.VarChar(50)
+  hourlyRate                  Decimal   @map("hourly_rate") @db.Decimal(6, 2)
+  supervisorRate              Decimal?  @map("supervisor_rate") @db.Decimal(6, 2)
+  regions                     String[]  @default([])
+  // Compliance
+  insuranceExpiry             DateTime? @map("insurance_expiry") @db.Date
+  insuranceDocumentPath       String?   @map("insurance_document_path") @db.VarChar(500)
+  rightToWorkVerified         Boolean   @default(false) @map("right_to_work_verified")
+  dbsChecked                  Boolean   @default(false) @map("dbs_checked")
+  dbsExpiry                   DateTime? @map("dbs_expiry") @db.Date
+  subcontractorAgreementSigned Boolean  @default(false) @map("subcontractor_agreement_signed")
+  subcontractorAgreementPath  String?   @map("subcontractor_agreement_path") @db.VarChar(500)
+  // Performance
+  performanceScore            Decimal   @default(85.0) @map("performance_score") @db.Decimal(4, 1)
+  totalWeeklyHours            Decimal   @default(0) @map("total_weekly_hours") @db.Decimal(6, 1)
+  // Status
+  status                      SubcontractorStatus @default(active)
+  notes                       String?
+  createdAt                   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  contracts Contract[]
+  tasks     Task[]
+
+  @@map("subcontractors")
+}
+
+enum SubcontractorStatus {
+  active
+  inactive
+  on_hold
+}
+
+// ──────────────────────────────────────────────
+// CALENDAR EVENTS
+// ──────────────────────────────────────────────
+
+model CalendarEvent {
+  id                    String      @id @default(uuid()) @db.Uuid
+  title                 String      @db.VarChar(255)
+  description           String?
+  startTime             DateTime    @map("start_time") @db.Timestamptz
+  endTime               DateTime    @map("end_time") @db.Timestamptz
+  allDay                Boolean     @default(false) @map("all_day")
+  // Linking
+  dealId                String?     @map("deal_id") @db.Uuid
+  contactId             String?     @map("contact_id") @db.Uuid
+  accountId             String?     @map("account_id") @db.Uuid
+  contractId            String?     @map("contract_id") @db.Uuid
+  // Attendees
+  createdBy             String      @map("created_by") @db.Uuid
+  attendees             String[]    @default([]) @db.Uuid
+  // Type
+  eventType             EventType   @default(meeting) @map("event_type")
+  // Calendly
+  calendlyEventId       String?     @map("calendly_event_id") @db.VarChar(255)
+  calendlyCancelUrl     String?     @map("calendly_cancel_url") @db.VarChar(500)
+  calendlyRescheduleUrl String?     @map("calendly_reschedule_url") @db.VarChar(500)
+  // Recurrence
+  isRecurring           Boolean     @default(false) @map("is_recurring")
+  recurrenceRule        String?     @map("recurrence_rule") @db.VarChar(100)
+  // Status
+  status                EventStatus @default(scheduled)
+  // Notifications
+  reminderSent          Boolean     @default(false) @map("reminder_sent")
+  reminderMinutesBefore Int         @default(30) @map("reminder_minutes_before")
+  createdAt             DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  deal     Deal?     @relation(fields: [dealId], references: [id])
+  contact  Contact?  @relation(fields: [contactId], references: [id])
+  account  Account?  @relation(fields: [accountId], references: [id])
+  contract Contract? @relation(fields: [contractId], references: [id])
+  creator  User      @relation("EventCreator", fields: [createdBy], references: [id])
+
+  @@map("calendar_events")
+}
+
+enum EventType {
+  meeting
+  site_visit
+  audit
+  review
+  call
+  personal
+  other
+}
+
+enum EventStatus {
+  scheduled
+  completed
+  cancelled
+}
+
+// ──────────────────────────────────────────────
+// TASKS
+// ──────────────────────────────────────────────
+
+model Task {
+  id               String     @id @default(uuid()) @db.Uuid
+  title            String     @db.VarChar(255)
+  description      String?
+  assignedTo       String     @map("assigned_to") @db.Uuid
+  createdBy        String     @map("created_by") @db.Uuid
+  taskType         TaskType   @default(business) @map("task_type")
+  priority         Priority   @default(medium)
+  // Linking
+  dealId           String?    @map("deal_id") @db.Uuid
+  leadId           String?    @map("lead_id") @db.Uuid
+  contactId        String?    @map("contact_id") @db.Uuid
+  accountId        String?    @map("account_id") @db.Uuid
+  contractId       String?    @map("contract_id") @db.Uuid
+  subcontractorId  String?    @map("subcontractor_id") @db.Uuid
+  // Dates
+  dueDate          DateTime?  @map("due_date") @db.Date
+  completedAt      DateTime?  @map("completed_at") @db.Timestamptz
+  // Status
+  status           TaskStatus @default(pending)
+  // Auto-generation
+  autoGenerated    Boolean    @default(false) @map("auto_generated")
+  sourceWorkflow   String?    @map("source_workflow") @db.VarChar(100)
+  notes            String?
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  assignee      User           @relation("TaskAssignee", fields: [assignedTo], references: [id])
+  creator       User           @relation("TaskCreator", fields: [createdBy], references: [id])
+  deal          Deal?          @relation(fields: [dealId], references: [id])
+  lead          Lead?          @relation(fields: [leadId], references: [id])
+  contact       Contact?       @relation(fields: [contactId], references: [id])
+  account       Account?       @relation(fields: [accountId], references: [id])
+  contract      Contract?      @relation(fields: [contractId], references: [id])
+  subcontractor Subcontractor? @relation(fields: [subcontractorId], references: [id])
+
+  @@map("tasks")
+}
+
+enum TaskType {
+  business
+  personal
+}
+
+enum Priority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum TaskStatus {
+  pending
+  in_progress
+  completed
+  cancelled
+}
+
+// ──────────────────────────────────────────────
+// ACTIVITIES
+// ──────────────────────────────────────────────
+
+model Activity {
+  id                String       @id @default(uuid()) @db.Uuid
+  activityType      ActivityType @map("activity_type")
+  subject           String?      @db.VarChar(255)
+  body              String?
+  // Linking
+  dealId            String?      @map("deal_id") @db.Uuid
+  leadId            String?      @map("lead_id") @db.Uuid
+  contactId         String?      @map("contact_id") @db.Uuid
+  accountId         String?      @map("account_id") @db.Uuid
+  contractId        String?      @map("contract_id") @db.Uuid
+  // Who
+  performedBy       String?      @map("performed_by") @db.Uuid
+  // Attachments
+  attachments       Json         @default("[]")
+  // Fireflies
+  firefliesMeetingId String?     @map("fireflies_meeting_id") @db.VarChar(255)
+  firefliesUrl      String?      @map("fireflies_url") @db.VarChar(500)
+  // Metadata
+  metadata          Json         @default("{}")
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  deal     Deal?     @relation(fields: [dealId], references: [id])
+  lead     Lead?     @relation(fields: [leadId], references: [id])
+  contact  Contact?  @relation(fields: [contactId], references: [id])
+  account  Account?  @relation(fields: [accountId], references: [id])
+  contract Contract? @relation(fields: [contractId], references: [id])
+  performer User?    @relation("ActivityPerformer", fields: [performedBy], references: [id])
+
+  @@map("activities")
+}
+
+enum ActivityType {
+  call
+  email_sent
+  email_received
+  site_visit
+  meeting
+  note
+  whatsapp
+  quote_sent
+  quote_accepted
+  quote_rejected
+  deal_stage_change
+  contract_created
+  audit_completed
+  task_completed
+  document_generated
+  cadence_email_sent
+  fireflies_transcript
+  quick_capture
+}
+
+// ──────────────────────────────────────────────
+// EMAILS
+// ──────────────────────────────────────────────
+
+model Email {
+  id             String      @id @default(uuid()) @db.Uuid
+  direction      EmailDirection
+  fromAddress    String      @map("from_address") @db.VarChar(255)
+  toAddress      String      @map("to_address") @db.VarChar(255)
+  ccAddresses    String[]    @default([]) @map("cc_addresses")
+  bccAddresses   String[]    @default([]) @map("bcc_addresses")
+  subject        String?     @db.VarChar(500)
+  bodyHtml       String?     @map("body_html")
+  bodyText       String?     @map("body_text")
+  // Threading
+  messageId      String?     @map("message_id") @db.VarChar(500)
+  inReplyTo      String?     @map("in_reply_to") @db.VarChar(500)
+  threadId       String?     @map("thread_id") @db.VarChar(500)
+  // Linking
+  dealId         String?     @map("deal_id") @db.Uuid
+  leadId         String?     @map("lead_id") @db.Uuid
+  contactId      String?     @map("contact_id") @db.Uuid
+  accountId      String?     @map("account_id") @db.Uuid
+  // Tracking
+  isCadenceEmail Boolean     @default(false) @map("is_cadence_email")
+  cadenceStep    Int?        @map("cadence_step")
+  openedAt       DateTime?   @map("opened_at") @db.Timestamptz
+  clickedAt      DateTime?   @map("clicked_at") @db.Timestamptz
+  repliedAt      DateTime?   @map("replied_at") @db.Timestamptz
+  // Attachments
+  attachments    Json        @default("[]")
+  // Status
+  status         EmailStatus @default(sent)
+  sentAt         DateTime?   @map("sent_at") @db.Timestamptz
+  receivedAt     DateTime?   @map("received_at") @db.Timestamptz
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  deal    Deal?    @relation(fields: [dealId], references: [id])
+  lead    Lead?    @relation(fields: [leadId], references: [id])
+  contact Contact? @relation(fields: [contactId], references: [id])
+  account Account? @relation(fields: [accountId], references: [id])
+
+  @@map("emails")
+}
+
+enum EmailDirection {
+  inbound
+  outbound
+}
+
+enum EmailStatus {
+  draft
+  queued
+  sent
+  failed
+  received
+}
+
+// ──────────────────────────────────────────────
+// EMAIL TEMPLATES
+// ──────────────────────────────────────────────
+
+model EmailTemplate {
+  id              String       @id @default(uuid()) @db.Uuid
+  templateType    TemplateType @map("template_type")
+  sequenceNumber  Int?         @map("sequence_number")
+  name            String       @db.VarChar(255)
+  subject         String       @db.VarChar(500)
+  bodyHtml        String       @map("body_html")
+  fromAddress     String       @default("nick@signature-cleans.co.uk") @map("from_address") @db.VarChar(255)
+  isActive        Boolean      @default(true) @map("is_active")
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  campaigns Campaign[]
+
+  @@map("email_templates")
+}
+
+enum TemplateType {
+  sales_cadence
+  nurture_loop
+  quote_follow_up
+  review_request
+  referral_nudge
+  seasonal_campaign
+  client_welcome
+  onboarding_check_in
+  contract_renewal
+  ad_hoc
+}
+
+// ──────────────────────────────────────────────
+// CAMPAIGNS
+// ──────────────────────────────────────────────
+
+model Campaign {
+  id              String         @id @default(uuid()) @db.Uuid
+  name            String         @db.VarChar(255)
+  description     String?
+  audienceFilter  Json           @map("audience_filter")
+  emailTemplateId String?        @map("email_template_id") @db.Uuid
+  scheduledFor    DateTime?      @map("scheduled_for") @db.Timestamptz
+  totalRecipients Int            @default(0) @map("total_recipients")
+  sentCount       Int            @default(0) @map("sent_count")
+  openCount       Int            @default(0) @map("open_count")
+  clickCount      Int            @default(0) @map("click_count")
+  replyCount      Int            @default(0) @map("reply_count")
+  bookingCount    Int            @default(0) @map("booking_count")
+  status          CampaignStatus @default(draft)
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  emailTemplate EmailTemplate? @relation(fields: [emailTemplateId], references: [id])
+
+  @@map("campaigns")
+}
+
+enum CampaignStatus {
+  draft
+  scheduled
+  sending
+  completed
+  cancelled
+}
+
+// ──────────────────────────────────────────────
+// AUDITS
+// ──────────────────────────────────────────────
+
+model Audit {
+  id                      String   @id @default(uuid()) @db.Uuid
+  contractId              String   @map("contract_id") @db.Uuid
+  auditorId               String   @map("auditor_id") @db.Uuid
+  auditDate               DateTime @map("audit_date") @db.Date
+  // Scores (JSON: each area rated 1-5)
+  generalStandards        Json     @map("general_standards")
+  staffPerformance        Json     @map("staff_performance")
+  hsCompliance            Json     @map("hs_compliance")
+  overallScore            Decimal  @map("overall_score") @db.Decimal(4, 1)
+  // Client feedback
+  clientSatisfactionScore Int?     @map("client_satisfaction_score")
+  clientFeedback          String?  @map("client_feedback")
+  // Photos
+  photos                  Json     @default("[]")
+  // Actions
+  actionItems             Json     @default("[]") @map("action_items")
+  requiresFollowUp        Boolean  @default(false) @map("requires_follow_up")
+  followUpDate            DateTime? @map("follow_up_date") @db.Date
+  followUpCompleted       Boolean  @default(false) @map("follow_up_completed")
+  notes                   String?
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  contract Contract @relation(fields: [contractId], references: [id])
+  auditor  User     @relation("Auditor", fields: [auditorId], references: [id])
+
+  @@map("audits")
+}
+
+// ──────────────────────────────────────────────
+// ISSUES
+// ──────────────────────────────────────────────
+
+model Issue {
+  id                  String        @id @default(uuid()) @db.Uuid
+  contractId          String        @map("contract_id") @db.Uuid
+  accountId           String?       @map("account_id") @db.Uuid
+  reportedBy          String?       @map("reported_by") @db.VarChar(255)
+  severity            IssueSeverity
+  category            IssueCategory?
+  title               String        @db.VarChar(255)
+  description         String
+  // SLA tracking
+  reportedAt          DateTime      @default(now()) @map("reported_at") @db.Timestamptz
+  firstResponseAt     DateTime?     @map("first_response_at") @db.Timestamptz
+  resolvedAt          DateTime?     @map("resolved_at") @db.Timestamptz
+  slaResponseTarget   DateTime?     @map("sla_response_target") @db.Timestamptz
+  slaResolutionTarget DateTime?     @map("sla_resolution_target") @db.Timestamptz
+  slaBreached         Boolean       @default(false) @map("sla_breached")
+  // Follow-up
+  followUpDueAt       DateTime?     @map("follow_up_due_at") @db.Timestamptz
+  followUpCompleted   Boolean       @default(false) @map("follow_up_completed")
+  // Resolution
+  resolution          String?
+  rootCause           RootCause?    @map("root_cause")
+  // Assignment
+  assignedTo          String?       @map("assigned_to") @db.Uuid
+  // Status
+  status              IssueStatus   @default(open)
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  contract Contract @relation(fields: [contractId], references: [id])
+  account  Account? @relation(fields: [accountId], references: [id])
+  assignee User?    @relation("IssueAssignee", fields: [assignedTo], references: [id])
+
+  @@map("issues")
+}
+
+enum IssueSeverity {
+  critical
+  high
+  medium
+  low
+}
+
+enum IssueCategory {
+  quality
+  missed_clean
+  equipment
+  staff
+  access
+  safety
+  other
+}
+
+enum IssueStatus {
+  open
+  in_progress
+  resolved
+  closed
+}
+
+enum RootCause {
+  training_gap
+  equipment_failure
+  process_flaw
+  performance_issue
+  other
+}
+
+// ──────────────────────────────────────────────
+// DOCUMENTS
+// ──────────────────────────────────────────────
+
+model Document {
+  id             String       @id @default(uuid()) @db.Uuid
+  documentType   DocumentType @map("document_type")
+  name           String       @db.VarChar(255)
+  filePath       String       @map("file_path") @db.VarChar(500)
+  fileUrl        String?      @map("file_url") @db.VarChar(500)
+  fileSize       Int?         @map("file_size")
+  mimeType       String?      @map("mime_type") @db.VarChar(100)
+  // Linking
+  dealId         String?      @map("deal_id") @db.Uuid
+  leadId         String?      @map("lead_id") @db.Uuid
+  accountId      String?      @map("account_id") @db.Uuid
+  contractId     String?      @map("contract_id") @db.Uuid
+  quoteId        String?      @map("quote_id") @db.Uuid
+  // Template
+  templateName   String?      @map("template_name") @db.VarChar(100)
+  generatedData  Json?        @map("generated_data")
+  createdBy      String?      @map("created_by") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  deal     Deal?     @relation(fields: [dealId], references: [id])
+  lead     Lead?     @relation(fields: [leadId], references: [id])
+  account  Account?  @relation(fields: [accountId], references: [id])
+  contract Contract? @relation(fields: [contractId], references: [id])
+  quote    Quote?    @relation(fields: [quoteId], references: [id])
+  creator  User?     @relation("DocumentCreator", fields: [createdBy], references: [id])
+
+  @@map("documents")
+}
+
+enum DocumentType {
+  quote_pdf
+  contract
+  site_pack
+  area_checklist
+  hs_pack
+  subcontractor_agreement
+  qbr_report
+  weekly_scorecard
+  audit_report
+  pitch_letter
+  client_welcome
+  other
+}
+
+// ──────────────────────────────────────────────
+// NOTIFICATIONS
+// ──────────────────────────────────────────────
+
+model Notification {
+  id               String           @id @default(uuid()) @db.Uuid
+  userId           String           @map("user_id") @db.Uuid
+  title            String           @db.VarChar(255)
+  message          String
+  notificationType NotificationType @map("notification_type")
+  linkUrl          String?          @map("link_url") @db.VarChar(500)
+  entityType       String?          @map("entity_type") @db.VarChar(50)
+  entityId         String?          @map("entity_id") @db.Uuid
+  read             Boolean          @default(false)
+  readAt           DateTime?        @map("read_at") @db.Timestamptz
+  emailed          Boolean          @default(false)
+  emailedAt        DateTime?        @map("emailed_at") @db.Timestamptz
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  new_lead
+  deal_stage_change
+  quote_not_followed_up
+  stale_deal
+  task_overdue
+  audit_due
+  contract_renewal
+  compliance_expiry
+  issue_raised
+  issue_sla_breach
+  cadence_reply
+  calendly_booking
+  weekly_scorecard
+  onboarding_milestone
+  health_score_change
+  deal_won
+  deal_lost
+}
