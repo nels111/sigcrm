@@ -637,6 +637,18 @@ function GrowthTab() {
   if (loading) return <LoadingState text="Loading growth data..." />;
   if (!data) return <ErrorState text="Failed to load growth data." />;
 
+  if (data.contractCount === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <Sprout className="h-10 w-10 text-muted-foreground/50 mb-3" />
+        <p className="text-muted-foreground font-medium">No active contracts yet</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Growth tracking will appear once contracts are created.
+        </p>
+      </div>
+    );
+  }
+
   const progressPercent = Math.min(100, data.progress);
 
   return (
@@ -778,6 +790,18 @@ function RevenueTab() {
   if (loading) return <LoadingState text="Loading revenue data..." />;
   if (!data) return <ErrorState text="Failed to load revenue data." />;
 
+  if (data.grandTotal.contractCount === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <DollarSign className="h-10 w-10 text-muted-foreground/50 mb-3" />
+        <p className="text-muted-foreground font-medium">No revenue data yet</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Revenue breakdown will appear once contracts are active.
+        </p>
+      </div>
+    );
+  }
+
   const cellColors: Record<string, string> = {
     A: "border-blue-200 bg-blue-50/50",
     B: "border-amber-200 bg-amber-50/50",
@@ -903,6 +927,18 @@ function FinancialTab() {
 
   if (loading) return <LoadingState text="Loading financial data..." />;
   if (!data) return <ErrorState text="Failed to load financial data." />;
+
+  if (data.summary.contractCount === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <Calculator className="h-10 w-10 text-muted-foreground/50 mb-3" />
+        <p className="text-muted-foreground font-medium">No financial data yet</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Financial detail will appear once contracts are active.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

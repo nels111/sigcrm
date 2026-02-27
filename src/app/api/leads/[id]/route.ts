@@ -67,6 +67,24 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Auto-sync: leadStatus → engagementStage
+// ---------------------------------------------------------------------------
+
+const STATUS_TO_ENGAGEMENT: Record<string, string> = {
+  NewLead: "ColdProspect",
+  Contacted: "WarmProspect",
+  IncomingCall: "WarmProspect",
+  MeetingBooked: "MeetingBooked",
+  MeetingAttended: "MeetingBooked",
+  QuoteSent: "Quoted",
+  QuoteAccepted: "Negotiating",
+  QuoteRejected: "ColdProspect",
+  FollowUpSent: "WarmProspect",
+  PreviousCustomer: "WorkCeased",
+  OngoingCustomer: "CurrentOngoing",
+};
+
 // PUT /api/leads/[id] — Update a lead
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
@@ -76,7 +94,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Check that the lead exists and is not soft-deleted
     const existing = await prisma.lead.findUnique({
       where: { id },
-      select: { id: true, deletedAt: true },
+      select: { id: true, deletedAt: true, leadStatus: true },
     });
 
     if (!existing) {
@@ -96,6 +114,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Remove fields that should not be directly set via update
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id: _id, createdAt: _ca, updatedAt: _ua, deletedAt: _da, ...updateData } = body;
+
+    // Auto-sync engagementStage when leadStatus changes
+    if (
+      updateData.leadStatus &&
+      updateData.leadStatus !== existing.leadStatus &&
+      !updateData.engagementStage
+    ) {
+      const mapped = STATUS_TO_ENGAGEMENT[updateData.leadStatus];
+      if (mapped) {
+        updateData.engagementStage = mapped;
+      }
+    }
 
     const lead = await prisma.lead.update({
       where: { id },

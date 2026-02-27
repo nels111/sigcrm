@@ -96,9 +96,13 @@ export function DealCard({ deal, index }: DealCardProps) {
             )}
           </div>
 
-          {/* Monthly value */}
+          {/* Monthly value — fall back to amount if monthlyValue is null */}
           <p className="mt-1.5 text-sm font-semibold text-emerald-600">
-            {formatCurrency(deal.monthlyValue)}/mo
+            {deal.monthlyValue != null
+              ? `${formatCurrency(deal.monthlyValue)}/mo`
+              : deal.amount != null
+              ? formatCurrency(deal.amount)
+              : "--"}
           </p>
 
           {/* Meta row: days in stage + cell type */}
