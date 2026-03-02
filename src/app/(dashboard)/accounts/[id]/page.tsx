@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { ActivityTimeline } from "@/components/shared/activity-timeline";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -837,6 +838,9 @@ export default function AccountDetailPage() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Activity Timeline */}
+          <ActivityTimeline entityType="account" entityId={accountId} />
         </div>
       </div>
     </div>

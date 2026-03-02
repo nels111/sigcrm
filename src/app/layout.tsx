@@ -14,8 +14,15 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Signature Cleans CRM",
+  title: "Signature OS",
   description: "CRM platform for Signature Cleans",
+  manifest: "/manifest.json",
+  themeColor: "#059669",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Signature OS",
+  },
 };
 
 export default function RootLayout({
@@ -25,10 +32,25 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta name="theme-color" content="#059669" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/sw.js').catch(() => {});
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );

@@ -152,10 +152,36 @@ export async function GET() {
       ),
     };
 
+    // Google Ads summary — derived from existing attribution data
+    const googleAdsRow = attribution.find((a) => a.source === "GoogleAds");
+    const googleAdsLeads = googleAdsRow?.totalLeads ?? 0;
+    const googleAdsConversions = googleAdsRow?.convertedLeads ?? 0;
+    const googleAdsWins = googleAdsRow?.wonDeals ?? 0;
+    const googleAdsRevenue = googleAdsRow?.wonRevenue ?? 0;
+
+    const googleAds = {
+      leads: googleAdsLeads,
+      conversions: googleAdsConversions,
+      conversionRate: googleAdsLeads > 0
+        ? parseFloat(((googleAdsConversions / googleAdsLeads) * 100).toFixed(1))
+        : 0,
+      wins: googleAdsWins,
+      winRate: googleAdsLeads > 0
+        ? parseFloat(((googleAdsWins / googleAdsLeads) * 100).toFixed(1))
+        : 0,
+      revenue: googleAdsRevenue,
+      avgDealValue: googleAdsWins > 0
+        ? parseFloat((googleAdsRevenue / googleAdsWins).toFixed(2))
+        : 0,
+      conversionTag: process.env.GOOGLE_ADS_TAG || null,
+      conversionLabel: process.env.GOOGLE_ADS_CONVERSION_LABEL || null,
+    };
+
     return NextResponse.json({
       data: {
         attribution,
         summary,
+        googleAds,
       },
     });
   } catch (error) {

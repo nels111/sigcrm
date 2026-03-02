@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { Prisma, QuoteStatus } from "@prisma/client";
+import { Prisma, QuoteStatus, DealStage } from "@prisma/client";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -109,10 +109,55 @@ export async function PUT(
       } else if (body.status === "accepted") {
         updateData.acceptedAt = new Date();
 
-        // Update linked deal stage to Negotiation (won) or ClosedWonRecurring
-        if (existing.dealId) {
+        let activeDealId = existing.dealId;
+
+        // Auto-create Deal if none exists
+        if (!activeDealId) {
+          // Look up or create account
+          let accountId: string | null = null;
+          const existingAccount = await prisma.account.findFirst({
+            where: {
+              name: { equals: existing.companyName, mode: "insensitive" },
+              deletedAt: null,
+            },
+          });
+          if (existingAccount) {
+            accountId = existingAccount.id;
+          } else {
+            const newAccount = await prisma.account.create({
+              data: {
+                name: existing.companyName,
+                address: existing.address,
+              },
+            });
+            accountId = newAccount.id;
+          }
+
+          const weeklyHours = Number(existing.hoursPerDay) * existing.frequencyPerWeek;
+          const newDeal = await prisma.deal.create({
+            data: {
+              name: `${existing.companyName} — Cleaning Contract`,
+              accountId,
+              leadId: existing.leadId,
+              stage: DealStage.ClosedWonRecurring,
+              probability: 100,
+              amount: existing.annualTotal,
+              monthlyValue: existing.monthlyTotal,
+              weeklyValue: existing.weeklyCharge,
+              weeklyHours,
+              dealType: "recurring",
+              actualCloseDate: new Date(),
+              stageChangedAt: new Date(),
+            },
+          });
+          activeDealId = newDeal.id;
+
+          // Link quote to the new deal
+          updateData.deal = { connect: { id: activeDealId } };
+        } else {
+          // Update existing deal stage to ClosedWonRecurring
           await prisma.deal.update({
-            where: { id: existing.dealId },
+            where: { id: activeDealId },
             data: {
               stage: "ClosedWonRecurring",
               probability: 100,
@@ -134,23 +179,21 @@ export async function PUT(
         }
 
         // Log activity
-        if (existing.dealId) {
-          await prisma.activity.create({
-            data: {
-              activityType: "quote_accepted",
-              subject: `Quote ${existing.quoteRef} accepted`,
-              body: `${existing.companyName} accepted the quote. Monthly value: \u00a3${existing.monthlyTotal}. Annual value: \u00a3${existing.annualTotal}.`,
-              dealId: existing.dealId,
-              leadId: existing.leadId,
-              metadata: {
-                quoteId: existing.id,
-                quoteRef: existing.quoteRef,
-                monthlyTotal: existing.monthlyTotal.toString(),
-                annualTotal: existing.annualTotal.toString(),
-              },
+        await prisma.activity.create({
+          data: {
+            activityType: "quote_accepted",
+            subject: `Quote ${existing.quoteRef} accepted`,
+            body: `${existing.companyName} accepted the quote. Monthly value: \u00a3${existing.monthlyTotal}. Annual value: \u00a3${existing.annualTotal}.`,
+            dealId: activeDealId,
+            leadId: existing.leadId,
+            metadata: {
+              quoteId: existing.id,
+              quoteRef: existing.quoteRef,
+              monthlyTotal: existing.monthlyTotal.toString(),
+              annualTotal: existing.annualTotal.toString(),
             },
-          });
-        }
+          },
+        });
       } else if (body.status === "rejected") {
         updateData.rejectedAt = new Date();
 

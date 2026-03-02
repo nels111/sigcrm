@@ -27,6 +27,8 @@ import {
   PhoneCall,
   StickyNote,
   ArrowRightCircle,
+  Star,
+  Copy,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,6 +74,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { ActivityLogDialog } from "@/components/shared/activity-log-dialog";
+import { CreateTaskDialog } from "@/components/shared/create-task-dialog";
+import { ActivityTimeline } from "@/components/shared/activity-timeline";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -194,6 +199,20 @@ interface TaskRecord {
   dueDate: string | null;
   completedAt: string | null;
   sourceWorkflow: string | null;
+}
+
+interface FeedbackRecord {
+  id: string;
+  token: string;
+  contactName: string | null;
+  overallRating: number | null;
+  cleaningQuality: number | null;
+  staffBehaviour: number | null;
+  communication: number | null;
+  valueForMoney: number | null;
+  comments: string | null;
+  submittedAt: string | null;
+  createdAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -429,6 +448,12 @@ export default function ContractDetailPage() {
   const [exitReason, setExitReason] = useState("");
   const [exitNotes, setExitNotes] = useState("");
   const [terminating, setTerminating] = useState(false);
+  const [activityDialogOpen, setActivityDialogOpen] = useState(false);
+  const [activityDefaultType, setActivityDefaultType] = useState("call");
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [completingMobilisation, setCompletingMobilisation] = useState(false);
+  const [feedbacks, setFeedbacks] = useState<FeedbackRecord[]>([]);
+  const [sendingFeedback, setSendingFeedback] = useState(false);
 
   const fetchContract = useCallback(async () => {
     try {
@@ -481,6 +506,75 @@ export default function ContractDetailPage() {
       toast({ title: "Error", description: "Failed to terminate contract.", variant: "destructive" });
     } finally {
       setTerminating(false);
+    }
+  }
+
+  async function handleCompleteMobilisation() {
+    setCompletingMobilisation(true);
+    try {
+      const res = await fetch(`/api/contracts/${contractId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "active", onboardingStage: "active" }),
+      });
+      if (!res.ok) throw new Error("Failed to complete mobilisation");
+      toast({ title: "Mobilisation Complete", description: "Contract is now active." });
+      fetchContract();
+    } catch {
+      toast({ title: "Error", description: "Failed to complete mobilisation.", variant: "destructive" });
+    } finally {
+      setCompletingMobilisation(false);
+    }
+  }
+
+  // Helper: toggle a mobilisation task as completed
+  async function handleToggleMobilisationTask(taskId: string, currentStatus: string) {
+    const newStatus = currentStatus === "completed" ? "pending" : "completed";
+    try {
+      await fetch(`/api/tasks/${taskId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      fetchContract();
+    } catch {
+      toast({ title: "Error", description: "Failed to update task.", variant: "destructive" });
+    }
+  }
+
+  // Fetch feedback for this contract
+  const fetchFeedback = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/feedback?contractId=${contractId}`);
+      if (res.ok) {
+        const json = await res.json();
+        setFeedbacks(json.data || []);
+      }
+    } catch { /* ignore */ }
+  }, [contractId]);
+
+  useEffect(() => {
+    if (contract) fetchFeedback();
+  }, [contract, fetchFeedback]);
+
+  async function handleSendFeedbackRequest() {
+    setSendingFeedback(true);
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contractId }),
+      });
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      const url = `${window.location.origin}${json.data.feedbackUrl}`;
+      await navigator.clipboard.writeText(url);
+      toast({ title: "Feedback Link Copied", description: "The feedback link has been copied to your clipboard." });
+      fetchFeedback();
+    } catch {
+      toast({ title: "Error", description: "Failed to create feedback request.", variant: "destructive" });
+    } finally {
+      setSendingFeedback(false);
     }
   }
 
@@ -602,11 +696,19 @@ export default function ContractDetailPage() {
                 <ClipboardCheck className="h-4 w-4 mr-2" />
                 Schedule Audit
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <MessageSquare className="h-4 w-4 mr-2" />
-                Log Activity
+              <DropdownMenuItem onClick={() => { setActivityDefaultType("call"); setActivityDialogOpen(true); }}>
+                <PhoneCall className="h-4 w-4 mr-2" />
+                Log Call
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { setActivityDefaultType("note"); setActivityDialogOpen(true); }}>
+                <StickyNote className="h-4 w-4 mr-2" />
+                Add Note
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { setActivityDefaultType("site_visit"); setActivityDialogOpen(true); }}>
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Log Site Visit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTaskDialogOpen(true)}>
                 <CheckCircle2 className="h-4 w-4 mr-2" />
                 Create Task
               </DropdownMenuItem>
@@ -846,6 +948,101 @@ export default function ContractDetailPage() {
             </Card>
           </div>
 
+          {/* Mobilisation Checklist (shown when status is mobilising) */}
+          {contract.status === "mobilising" && (() => {
+            const mobilisationTasks = contract.tasks.filter(
+              (t) => t.sourceWorkflow === "deal_won_mobilisation"
+            );
+            const completedCount = mobilisationTasks.filter(
+              (t) => t.status === "completed" || t.completedAt
+            ).length;
+            const totalCount = mobilisationTasks.length;
+            const allDone = totalCount > 0 && completedCount === totalCount;
+
+            return totalCount > 0 ? (
+              <Card className={allDone ? "border-emerald-200 bg-emerald-50/30" : ""}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <ClipboardCheck className="h-4 w-4" />
+                      Mobilisation Checklist
+                    </CardTitle>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground">
+                        {completedCount}/{totalCount} completed
+                      </span>
+                      {allDone && (
+                        <Button
+                          size="sm"
+                          className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                          onClick={handleCompleteMobilisation}
+                          disabled={completingMobilisation}
+                        >
+                          {completingMobilisation && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          )}
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Complete Mobilisation
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                    <div
+                      className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }}
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {mobilisationTasks.map((task) => {
+                      const isDone = task.status === "completed" || !!task.completedAt;
+                      return (
+                        <div
+                          key={task.id}
+                          className={`flex items-center gap-3 rounded-md border p-3 cursor-pointer transition-colors ${
+                            isDone
+                              ? "border-emerald-200 bg-emerald-50"
+                              : "border-gray-200 hover:bg-gray-50"
+                          }`}
+                          onClick={() => handleToggleMobilisationTask(task.id, task.status)}
+                        >
+                          <div
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
+                              isDone
+                                ? "border-emerald-500 bg-emerald-500"
+                                : "border-gray-300"
+                            }`}
+                          >
+                            {isDone && (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-white" />
+                            )}
+                          </div>
+                          <span
+                            className={`text-sm ${
+                              isDone
+                                ? "text-emerald-700 line-through"
+                                : "text-foreground"
+                            }`}
+                          >
+                            {task.title}
+                          </span>
+                          {task.dueDate && !isDone && (
+                            <span className="ml-auto text-[10px] text-muted-foreground">
+                              Due {formatDate(task.dueDate)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null;
+          })()}
+
           {/* Onboarding Tracker */}
           {!contract.onboardingComplete && (
             <Card>
@@ -898,6 +1095,97 @@ export default function ContractDetailPage() {
                   {/* Background connector line */}
                   <div className="absolute top-4 left-[8%] right-[8%] h-0.5 bg-border -z-0" />
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Client Feedback Section */}
+          {(contract.status === "active" || contract.status === "mobilising") && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Star className="h-4 w-4" />
+                    Client Feedback
+                  </CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleSendFeedbackRequest}
+                    disabled={sendingFeedback}
+                  >
+                    {sendingFeedback ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                    Generate Feedback Link
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {feedbacks.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic text-center py-4">
+                    No feedback requests yet. Generate a link to send to your client.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {feedbacks.map((fb) => (
+                      <div
+                        key={fb.id}
+                        className={`rounded-lg border p-3 ${
+                          fb.submittedAt
+                            ? "border-emerald-200 bg-emerald-50/50"
+                            : "border-gray-200"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            {fb.submittedAt ? (
+                              <div className="flex items-center gap-2">
+                                <div className="flex">
+                                  {Array.from({ length: 10 }, (_, i) => (
+                                    <Star
+                                      key={i}
+                                      className={`h-3.5 w-3.5 ${
+                                        i < (fb.overallRating || 0)
+                                          ? "text-amber-400 fill-amber-400"
+                                          : "text-gray-300"
+                                      }`}
+                                    />
+                                  ))}
+                                </div>
+                                <span className="text-sm font-medium">
+                                  {fb.overallRating}/10
+                                </span>
+                              </div>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                                Pending
+                              </Badge>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-muted-foreground">
+                            {fb.submittedAt
+                              ? formatDate(fb.submittedAt)
+                              : `Sent ${formatDate(fb.createdAt)}`}
+                          </span>
+                        </div>
+                        {fb.contactName && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {fb.contactName}
+                          </p>
+                        )}
+                        {fb.comments && (
+                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                            &ldquo;{fb.comments}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -1172,65 +1460,36 @@ export default function ContractDetailPage() {
 
         {/* ====== ACTIVITY TAB ====== */}
         <TabsContent value="activity" className="space-y-6">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Activity Timeline</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {contract.activities.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic py-4 text-center">
-                  No activities yet.
-                </p>
-              ) : (
-                <div className="relative space-y-0">
-                  {/* Timeline line */}
-                  <div className="absolute left-[11px] top-2 bottom-2 w-px bg-border" />
-
-                  {[...contract.activities]
-                    .sort(
-                      (a, b) =>
-                        new Date(b.createdAt).getTime() -
-                        new Date(a.createdAt).getTime()
-                    )
-                    .map((activity) => (
-                      <div
-                        key={activity.id}
-                        className="relative flex gap-3 pb-4 last:pb-0"
-                      >
-                        <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-background border">
-                          {activityIcon(activity.activityType)}
-                        </div>
-                        <div className="flex-1 min-w-0 pt-0.5">
-                          <div className="flex items-baseline gap-2">
-                            <p className="text-sm font-medium">
-                              {activityTypeLabel(activity.activityType)}
-                            </p>
-                            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                              {formatDateTime(activity.createdAt)}
-                            </span>
-                          </div>
-                          {activity.subject && (
-                            <p className="text-sm text-foreground mt-0.5">
-                              {activity.subject}
-                            </p>
-                          )}
-                          {activity.body && (
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                              {activity.body}
-                            </p>
-                          )}
-                          {activity.performer && (
-                            <p className="text-[11px] text-muted-foreground mt-1">
-                              by {activity.performer.name}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <div className="flex items-center gap-2 mb-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => { setActivityDefaultType("call"); setActivityDialogOpen(true); }}
+            >
+              <PhoneCall className="h-3.5 w-3.5" />
+              Log Call
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => { setActivityDefaultType("note"); setActivityDialogOpen(true); }}
+            >
+              <StickyNote className="h-3.5 w-3.5" />
+              Add Note
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => { setActivityDefaultType("site_visit"); setActivityDialogOpen(true); }}
+            >
+              <Calendar className="h-3.5 w-3.5" />
+              Log Site Visit
+            </Button>
+          </div>
+          <ActivityTimeline entityType="contract" entityId={contractId} />
         </TabsContent>
 
         {/* ====== DOCUMENTS TAB ====== */}
@@ -1394,6 +1653,25 @@ export default function ContractDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Activity Log Dialog */}
+      <ActivityLogDialog
+        open={activityDialogOpen}
+        onOpenChange={setActivityDialogOpen}
+        onSuccess={fetchContract}
+        contractId={contractId}
+        accountId={contract.accountId || undefined}
+        defaultType={activityDefaultType}
+      />
+
+      {/* Create Task Dialog */}
+      <CreateTaskDialog
+        open={taskDialogOpen}
+        onOpenChange={setTaskDialogOpen}
+        onSuccess={fetchContract}
+        contractId={contractId}
+        accountId={contract.accountId || undefined}
+      />
 
       {/* Terminate Contract Dialog */}
       <Dialog open={terminateOpen} onOpenChange={setTerminateOpen}>

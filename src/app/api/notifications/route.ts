@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma, NotificationType } from "@prisma/client";
+import { sendNotificationEmail } from "@/lib/notification-email";
 
 // GET /api/notifications — List notifications for current user
 export async function GET(request: NextRequest) {
@@ -102,6 +103,14 @@ export async function POST(request: NextRequest) {
         entityId: body.entityId || null,
       },
     });
+
+    // Send email notification (best-effort, non-blocking)
+    sendNotificationEmail(
+      body.userId,
+      body.title,
+      body.message,
+      body.linkUrl || null
+    ).catch(() => {});
 
     return NextResponse.json({ data: notification }, { status: 201 });
   } catch (error) {

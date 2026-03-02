@@ -36,6 +36,8 @@ export async function GET() {
       lostDeals,
       // Overdue audits
       overdueAudits,
+      // Below target margin
+      belowTargetMargin,
     ] = await Promise.all([
       // Active deals with amounts
       prisma.deal.findMany({
@@ -169,7 +171,7 @@ export async function GET() {
         FROM deals d
         LEFT JOIN accounts a ON d.account_id = a.id
         WHERE d.deleted_at IS NULL
-          AND d.stage NOT IN ('Closed Won Recurring', 'Closed Won One-Off', 'Closed Lost Recurring', 'Closed Lost One-Off')
+          AND d.stage NOT IN ('ClosedWonRecurring', 'ClosedWonOneOff', 'ClosedLostRecurring', 'ClosedLostOneOff')
           AND COALESCE(d.stage_changed_at, d.created_at) < ${fourteenDaysAgo}
         ORDER BY COALESCE(d.stage_changed_at, d.created_at) ASC
         LIMIT 5
@@ -197,6 +199,15 @@ export async function GET() {
           deletedAt: null,
           status: "active",
           nextAuditDate: { lt: now },
+        },
+      }),
+
+      // Below target margin (contracts with gross margin < 35%)
+      prisma.contract.count({
+        where: {
+          deletedAt: null,
+          status: { in: ["mobilising", "active"] },
+          grossMarginPercent: { lt: 35 },
         },
       }),
     ]);
@@ -261,6 +272,7 @@ export async function GET() {
           weeklyHours: parseFloat(totalWeeklyHours.toFixed(1)),
           monthlyRevenue: parseFloat(totalMonthlyRevenue.toFixed(2)),
           overdueAudits,
+          belowTargetMargin,
         },
         leads: {
           inCadence: leadsInCadence,

@@ -109,6 +109,31 @@ function getTransporter(alias: SenderAlias): Transporter<SMTPTransport.SentMessa
  */
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   const { from, to, cc, bcc, subject, html, text, attachments } = options;
+
+  // ── External email guard ──────────────────────────────────────────────
+  // When ENABLE_EXTERNAL_EMAILS is not "true", block sends to any address
+  // that is NOT @signature-cleans.co.uk.  Returns a dummy result so callers
+  // (cadence engine, quote follow-up, etc.) don't break.
+  if (process.env.ENABLE_EXTERNAL_EMAILS !== "true") {
+    const allRecipients = [to, cc, bcc].filter(Boolean).join(",");
+    const isInternal = allRecipients
+      .split(",")
+      .map((addr) => addr.trim().toLowerCase())
+      .every((addr) => addr.endsWith("@signature-cleans.co.uk"));
+
+    if (!isInternal) {
+      console.log(
+        `[Email] External emails disabled — skipping send to "${to}" (subject: "${subject}")`
+      );
+      return {
+        messageId: `<blocked-${Date.now()}@local>`,
+        accepted: [],
+        rejected: [to],
+        response: "External emails disabled via ENABLE_EXTERNAL_EMAILS env var",
+      };
+    }
+  }
+
   const { email: fromAddress } = getCredentials(from);
   const transporter = getTransporter(from);
 

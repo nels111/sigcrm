@@ -24,6 +24,13 @@ import {
   FileText,
   MailOpen,
   RefreshCw,
+  Target,
+  TrendingUp,
+  Users,
+  DollarSign,
+  AlertCircle,
+  ExternalLink,
+  Tag,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -644,11 +651,84 @@ function CampaignsTab() {
     fetchCampaigns();
   }, [fetchCampaigns]);
 
-  function handleNewCampaign() {
-    toast({
-      title: "Coming Soon",
-      description: "Campaign creation will be available in the next update.",
-    });
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [newTemplateId, setNewTemplateId] = useState("");
+  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [sendingId, setSendingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/email-templates?limit=50")
+      .then((r) => r.json())
+      .then((j) => setTemplates(j.data || []))
+      .catch(() => {});
+  }, []);
+
+  async function handleCreateCampaign() {
+    if (!newName.trim()) return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newName.trim(),
+          description: newDesc.trim() || undefined,
+          emailTemplateId: newTemplateId || undefined,
+          audienceFilter: {},
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ title: "Campaign created" });
+      setCreateOpen(false);
+      setNewName("");
+      setNewDesc("");
+      setNewTemplateId("");
+      fetchCampaigns();
+    } catch {
+      toast({ title: "Error", description: "Failed to create campaign.", variant: "destructive" });
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleSendCampaign(campaignId: string) {
+    if (!confirm("Are you sure you want to send this campaign now?")) return;
+    setSendingId(campaignId);
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/send`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed");
+      }
+      const json = await res.json();
+      toast({
+        title: "Campaign sent",
+        description: `Sent to ${json.data.sentCount} of ${json.data.totalRecipients} recipients.`,
+      });
+      fetchCampaigns();
+    } catch (err) {
+      toast({
+        title: "Send failed",
+        description: err instanceof Error ? err.message : "Failed to send campaign.",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingId(null);
+    }
+  }
+
+  async function handleDeleteCampaign(campaignId: string) {
+    if (!confirm("Delete this campaign?")) return;
+    try {
+      await fetch(`/api/campaigns/${campaignId}`, { method: "DELETE" });
+      toast({ title: "Campaign deleted" });
+      fetchCampaigns();
+    } catch {
+      toast({ title: "Error", description: "Failed to delete.", variant: "destructive" });
+    }
   }
 
   return (
@@ -661,7 +741,7 @@ function CampaignsTab() {
             Manage email campaigns and track performance.
           </p>
         </div>
-        <Button onClick={handleNewCampaign} className="gap-2">
+        <Button onClick={() => setCreateOpen(true)} className="gap-2">
           <Plus className="h-4 w-4" />
           New Campaign
         </Button>
@@ -763,19 +843,29 @@ function CampaignsTab() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        title="Edit"
-                      >
-                        <Edit className="h-3.5 w-3.5" />
-                      </Button>
+                      {campaign.status === "draft" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-xs gap-1"
+                          title="Send Campaign"
+                          disabled={sendingId === campaign.id}
+                          onClick={() => handleSendCampaign(campaign.id)}
+                        >
+                          {sendingId === campaign.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Send className="h-3.5 w-3.5" />
+                          )}
+                          Send
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-8 w-8 p-0"
                         title="Delete"
+                        onClick={() => handleDeleteCampaign(campaign.id)}
                       >
                         <Trash2 className="h-3.5 w-3.5 text-red-500" />
                       </Button>
@@ -787,6 +877,65 @@ function CampaignsTab() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Create Campaign Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Create Campaign</DialogTitle>
+            <DialogDescription>
+              Set up a new email campaign to reach your leads.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label htmlFor="campaign-name">Campaign Name *</Label>
+              <Input
+                id="campaign-name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. Spring 2026 Outreach"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="campaign-desc">Description</Label>
+              <Textarea
+                id="campaign-desc"
+                value={newDesc}
+                onChange={(e) => setNewDesc(e.target.value)}
+                placeholder="Optional description..."
+                className="mt-1"
+                rows={2}
+              />
+            </div>
+            <div>
+              <Label>Email Template</Label>
+              <Select value={newTemplateId} onValueChange={setNewTemplateId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select template..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateCampaign} disabled={creating || !newName.trim()}>
+              {creating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Create Campaign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1345,6 +1494,184 @@ function AnalyticsTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Google Ads Tab
+// ---------------------------------------------------------------------------
+
+interface GoogleAdsData {
+  leads: number;
+  conversions: number;
+  conversionRate: number;
+  wins: number;
+  winRate: number;
+  revenue: number;
+  avgDealValue: number;
+  conversionTag: string | null;
+  conversionLabel: string | null;
+}
+
+function GoogleAdsTab() {
+  const [data, setData] = useState<GoogleAdsData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const res = await fetch("/api/reports/attribution");
+        if (!res.ok) throw new Error("Failed to fetch");
+        const json = await res.json();
+        setData(json.data?.googleAds ?? null);
+      } catch {
+        // leave data null
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const ga = data ?? {
+    leads: 0,
+    conversions: 0,
+    conversionRate: 0,
+    wins: 0,
+    winRate: 0,
+    revenue: 0,
+    avgDealValue: 0,
+    conversionTag: null,
+    conversionLabel: null,
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* API Not Connected Banner */}
+      <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20">
+        <CardContent className="flex items-start gap-3 pt-5">
+          <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+              Google Ads API Not Connected
+            </p>
+            <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1">
+              Data below is sourced from CRM lead attribution (leads tagged as &quot;Google Ads&quot; source).
+              To pull live campaign spend, impressions, and click data directly from Google Ads, connect the API.
+            </p>
+            <div className="mt-3 text-xs text-amber-700/70 dark:text-amber-400/70 space-y-1">
+              <p className="font-medium">Setup steps:</p>
+              <ol className="list-decimal list-inside space-y-0.5 ml-1">
+                <li>Create a Google Cloud project &amp; enable the Google Ads API</li>
+                <li>Generate OAuth2 credentials (client ID + secret)</li>
+                <li>Link your Google Ads account (MCC or individual)</li>
+                <li>Add <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded text-[11px]">GOOGLE_ADS_CLIENT_ID</code>, <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded text-[11px]">GOOGLE_ADS_CLIENT_SECRET</code>, and <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded text-[11px]">GOOGLE_ADS_REFRESH_TOKEN</code> to your .env</li>
+              </ol>
+            </div>
+          </div>
+          <a
+            href="https://developers.google.com/google-ads/api/docs/get-started/introduction"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Button variant="outline" size="sm" className="gap-1.5 shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/40">
+              <ExternalLink className="h-3.5 w-3.5" />
+              Docs
+            </Button>
+          </a>
+        </CardContent>
+      </Card>
+
+      {/* KPI Cards */}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          title="Google Ads Leads"
+          value={ga.leads}
+          subtitle="All time from Google Ads source"
+          icon={Users}
+          accentBg="bg-blue-50 dark:bg-blue-950/30"
+          accentIcon="text-blue-600 dark:text-blue-400"
+        />
+        <StatCard
+          title="Conversion Rate"
+          value={`${ga.conversionRate}%`}
+          subtitle={`${ga.conversions} converted to deal`}
+          icon={TrendingUp}
+          accentBg="bg-emerald-50 dark:bg-emerald-950/30"
+          accentIcon="text-emerald-600 dark:text-emerald-400"
+        />
+        <StatCard
+          title="Won Deals"
+          value={ga.wins}
+          subtitle={`${ga.winRate}% win rate`}
+          icon={Target}
+          accentBg="bg-purple-50 dark:bg-purple-950/30"
+          accentIcon="text-purple-600 dark:text-purple-400"
+        />
+        <StatCard
+          title="Revenue"
+          value={`\u00a3${ga.revenue.toLocaleString("en-GB")}`}
+          subtitle={ga.wins > 0 ? `Avg \u00a3${ga.avgDealValue.toLocaleString("en-GB")} per deal` : "No won deals yet"}
+          icon={DollarSign}
+          accentBg="bg-amber-50 dark:bg-amber-950/30"
+          accentIcon="text-amber-600 dark:text-amber-400"
+        />
+      </div>
+
+      {/* Conversion Tracking Config */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Tag className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Conversion Tracking Configuration</CardTitle>
+          </div>
+          <CardDescription>
+            Your Google Ads conversion tracking tag and label used on the landing page.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Tag ID
+              </p>
+              {ga.conversionTag ? (
+                <code className="block text-sm font-mono bg-muted px-3 py-2 rounded-md">
+                  {ga.conversionTag}
+                </code>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">Not configured</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Conversion Label
+              </p>
+              {ga.conversionLabel ? (
+                <code className="block text-sm font-mono bg-muted px-3 py-2 rounded-md break-all">
+                  {ga.conversionLabel}
+                </code>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">Not configured</p>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-4">
+            Set <code className="bg-muted px-1 rounded">GOOGLE_ADS_TAG</code> and{" "}
+            <code className="bg-muted px-1 rounded">GOOGLE_ADS_CONVERSION_LABEL</code> in your .env
+            to update these values.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Export
 // ---------------------------------------------------------------------------
 
@@ -1366,7 +1693,7 @@ export function MarketingPageClient() {
 
       {/* Tabs */}
       <Tabs defaultValue="cadences" className="space-y-6">
-        <TabsList className="grid w-full max-w-lg grid-cols-4">
+        <TabsList className="grid w-full max-w-2xl grid-cols-5">
           <TabsTrigger value="cadences" className="gap-1.5">
             <Zap className="h-3.5 w-3.5 hidden sm:block" />
             Cadences
@@ -1382,6 +1709,10 @@ export function MarketingPageClient() {
           <TabsTrigger value="analytics" className="gap-1.5">
             <BarChart3 className="h-3.5 w-3.5 hidden sm:block" />
             Analytics
+          </TabsTrigger>
+          <TabsTrigger value="google-ads" className="gap-1.5">
+            <Target className="h-3.5 w-3.5 hidden sm:block" />
+            Google Ads
           </TabsTrigger>
         </TabsList>
 
@@ -1399,6 +1730,10 @@ export function MarketingPageClient() {
 
         <TabsContent value="analytics">
           <AnalyticsTab />
+        </TabsContent>
+
+        <TabsContent value="google-ads">
+          <GoogleAdsTab />
         </TabsContent>
       </Tabs>
     </div>

@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Card,
   CardContent,
   CardHeader,
@@ -13,6 +20,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
   Building2,
@@ -29,8 +39,11 @@ import {
   ListChecks,
   Lightbulb,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CreateTaskDialog } from "@/components/shared/create-task-dialog";
+import { useToast } from "@/hooks/use-toast";
 
 // ───── Types ─────
 interface DealDetail {
@@ -235,11 +248,55 @@ function getStageIndex(stage: string): number {
 export default function DealDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { toast } = useToast();
   const dealId = params.id as string;
 
   const [deal, setDeal] = useState<DealDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [activityDialogOpen, setActivityDialogOpen] = useState(false);
+  const [activityType, setActivityType] = useState<"call" | "note">("call");
+
+  async function fetchDealData() {
+    try {
+      const res = await fetch(`/api/deals/${dealId}`);
+      if (!res.ok) throw new Error("Deal not found");
+      const json = await res.json();
+      setDeal(json.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load deal");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLogActivity(type: "call" | "note") {
+    setActivityType(type);
+    setActivityDialogOpen(true);
+  }
+
+  async function submitActivity(subject: string, body: string, duration?: number) {
+    try {
+      const res = await fetch("/api/activities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activityType: activityType,
+          subject,
+          body,
+          dealId,
+          metadata: duration ? { duration } : {},
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to log activity");
+      toast({ title: "Activity logged", description: `${activityType === "call" ? "Call" : "Note"} logged successfully.` });
+      setActivityDialogOpen(false);
+      fetchDealData();
+    } catch {
+      toast({ title: "Error", description: "Failed to log activity.", variant: "destructive" });
+    }
+  }
 
   useEffect(() => {
     async function fetchDeal() {
@@ -616,23 +673,57 @@ export default function DealDetailPage() {
               <CardTitle className="text-base">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start" size="sm">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                size="sm"
+                onClick={() => handleLogActivity("call")}
+              >
                 <Phone className="h-4 w-4 mr-2" />
                 Log Call
               </Button>
-              <Button variant="outline" className="w-full justify-start" size="sm">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                size="sm"
+                onClick={() => router.push(`/emails?compose=true&dealId=${dealId}&to=${deal.contact?.email || ""}`)}
+              >
                 <Mail className="h-4 w-4 mr-2" />
                 Send Email
               </Button>
-              <Button variant="outline" className="w-full justify-start" size="sm">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                size="sm"
+                onClick={() => router.push(`/calendar?new=true&dealId=${dealId}`)}
+              >
                 <Calendar className="h-4 w-4 mr-2" />
                 Schedule Meeting
               </Button>
-              <Button variant="outline" className="w-full justify-start" size="sm">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                size="sm"
+                onClick={() => handleLogActivity("note")}
+              >
                 <MessageSquare className="h-4 w-4 mr-2" />
                 Add Note
               </Button>
-              <Button variant="outline" className="w-full justify-start" size="sm">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                size="sm"
+                onClick={() => setTaskDialogOpen(true)}
+              >
+                <ListChecks className="h-4 w-4 mr-2" />
+                Create Task
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                size="sm"
+                onClick={() => router.push(`/quotes/new?dealId=${dealId}`)}
+              >
                 <FileText className="h-4 w-4 mr-2" />
                 Create Quote
               </Button>
@@ -756,6 +847,119 @@ export default function DealDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* Create Task Dialog */}
+      <CreateTaskDialog
+        open={taskDialogOpen}
+        onOpenChange={setTaskDialogOpen}
+        dealId={dealId}
+        onSuccess={fetchDealData}
+      />
+
+      {/* Activity Log Dialog (Call / Note) */}
+      <ActivityLogInlineDialog
+        open={activityDialogOpen}
+        onOpenChange={setActivityDialogOpen}
+        type={activityType}
+        onSubmit={submitActivity}
+      />
     </div>
+  );
+}
+
+// Inline activity log dialog for Log Call / Add Note
+function ActivityLogInlineDialog({
+  open,
+  onOpenChange,
+  type,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  type: "call" | "note";
+  onSubmit: (subject: string, body: string, duration?: number) => void;
+}) {
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [duration, setDuration] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setSubject("");
+      setBody("");
+      setDuration("");
+    }
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[440px]">
+        <DialogHeader>
+          <DialogTitle>
+            {type === "call" ? "Log Call" : "Add Note"}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div>
+            <Label htmlFor="activity-subject">Subject</Label>
+            <Input
+              id="activity-subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder={type === "call" ? "Call with..." : "Note about..."}
+              className="mt-1"
+              autoFocus
+            />
+          </div>
+          <div>
+            <Label htmlFor="activity-body">
+              {type === "call" ? "Call Notes" : "Note Content"}
+            </Label>
+            <Textarea
+              id="activity-body"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Enter details..."
+              className="mt-1"
+              rows={4}
+            />
+          </div>
+          {type === "call" && (
+            <div>
+              <Label htmlFor="activity-duration">Duration (minutes)</Label>
+              <Input
+                id="activity-duration"
+                type="number"
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
+                placeholder="e.g. 15"
+                className="mt-1 w-32"
+              />
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            disabled={submitting || !subject.trim()}
+            onClick={async () => {
+              setSubmitting(true);
+              await onSubmit(
+                subject,
+                body,
+                duration ? parseInt(duration) : undefined
+              );
+              setSubmitting(false);
+            }}
+          >
+            {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {type === "call" ? "Log Call" : "Save Note"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

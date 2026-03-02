@@ -212,8 +212,11 @@ interface FinancialContract {
   monthlyRevenue: number;
   monthlyLabourCost: number;
   consumablesPercent: number;
+  monthlyGrossProfit: number;
   grossMarginPercent: number;
   marginStatus: string;
+  weeklyHours: number;
+  annualValue: number;
 }
 
 interface FinancialData {
@@ -227,7 +230,12 @@ interface FinancialData {
     overallMarginPercent: number;
     overallMarginStatus: string;
     marginDistribution: { green: number; amber: number; red: number };
+    totalWeeklyHours: number;
+    totalAnnualValue: number;
+    weeklyHoursTarget: number;
+    weeklyHoursProgress: number;
   };
+  monthlyTrend: { month: string; revenue: number }[];
 }
 
 interface ScorecardData {
@@ -942,6 +950,92 @@ function FinancialTab() {
 
   return (
     <div className="space-y-4">
+      {/* Top KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-1">
+              Monthly Revenue
+            </p>
+            <p className="text-2xl font-bold">
+              {formatCurrencyDecimal(data.summary.totalMonthlyRevenue)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-1">
+              Annual Value
+            </p>
+            <p className="text-2xl font-bold">
+              {formatCurrencyDecimal(data.summary.totalAnnualValue)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-1">
+              Gross Profit (Monthly)
+            </p>
+            <p className="text-2xl font-bold text-emerald-600">
+              {formatCurrencyDecimal(data.summary.totalGrossProfit)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-1">
+              Overall Margin
+            </p>
+            <p className={cn(
+              "text-2xl font-bold",
+              data.summary.overallMarginPercent >= 35
+                ? "text-emerald-600"
+                : data.summary.overallMarginPercent >= 25
+                  ? "text-amber-600"
+                  : "text-red-600"
+            )}>
+              {data.summary.overallMarginPercent}%
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Weekly hours progress bar */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">
+              Weekly Hours Progress
+            </CardTitle>
+            <span className="text-sm font-medium">
+              {data.summary.totalWeeklyHours.toFixed(1)} / {data.summary.weeklyHoursTarget} hrs
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="w-full bg-gray-200 rounded-full h-4 relative overflow-hidden">
+            <div
+              className={cn(
+                "h-4 rounded-full transition-all duration-500",
+                data.summary.weeklyHoursProgress >= 100
+                  ? "bg-emerald-500"
+                  : data.summary.weeklyHoursProgress >= 50
+                    ? "bg-blue-500"
+                    : "bg-amber-500"
+              )}
+              style={{ width: `${Math.min(data.summary.weeklyHoursProgress, 100)}%` }}
+            />
+            <span className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold text-white mix-blend-difference">
+              {data.summary.weeklyHoursProgress}%
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            {(data.summary.weeklyHoursTarget - data.summary.totalWeeklyHours).toFixed(1)} hours remaining to reach 1,000 hrs/week target
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Margin distribution */}
       <div className="grid grid-cols-3 gap-4">
         <Card className="border-emerald-200 bg-emerald-50/50">
@@ -970,13 +1064,16 @@ function FinancialTab() {
         </Card>
       </div>
 
-      {/* Contracts table */}
+      {/* Per-contract P&L table */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Contract Financial Detail</CardTitle>
+          <CardTitle className="text-base">Contract P&L Detail</CardTitle>
+          <CardDescription>
+            Per-contract profitability breakdown. Contracts below 35% margin are flagged.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-lg border">
+          <div className="rounded-lg border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -987,22 +1084,33 @@ function FinancialTab() {
                     Cell
                   </TableHead>
                   <TableHead className="text-xs font-medium uppercase tracking-wide text-right">
-                    Monthly Revenue
+                    Hrs/Wk
+                  </TableHead>
+                  <TableHead className="text-xs font-medium uppercase tracking-wide text-right">
+                    Revenue
                   </TableHead>
                   <TableHead className="text-xs font-medium uppercase tracking-wide text-right hidden md:table-cell">
                     Labour Cost
                   </TableHead>
                   <TableHead className="text-xs font-medium uppercase tracking-wide text-right hidden lg:table-cell">
-                    Consumables %
+                    Consumables
                   </TableHead>
                   <TableHead className="text-xs font-medium uppercase tracking-wide text-right">
-                    Gross Margin %
+                    Margin %
+                  </TableHead>
+                  <TableHead className="text-xs font-medium uppercase tracking-wide text-center w-10">
+                    Status
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.contracts.map((c) => (
-                  <TableRow key={c.id}>
+                  <TableRow
+                    key={c.id}
+                    className={cn(
+                      c.grossMarginPercent < 35 && "bg-red-50/50"
+                    )}
+                  >
                     <TableCell className="font-medium">
                       {c.contractName}
                     </TableCell>
@@ -1010,6 +1118,9 @@ function FinancialTab() {
                       <Badge variant="outline" className="text-[11px]">
                         {c.cellType}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {c.weeklyHours.toFixed(1)}
                     </TableCell>
                     <TableCell className="text-right">
                       {formatCurrencyDecimal(c.monthlyRevenue)}
@@ -1031,6 +1142,18 @@ function FinancialTab() {
                         {c.grossMarginPercent}%
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-center">
+                      <div
+                        className={cn(
+                          "h-3 w-3 rounded-full mx-auto",
+                          c.marginStatus === "GREEN"
+                            ? "bg-green-500"
+                            : c.marginStatus === "AMBER"
+                              ? "bg-yellow-500"
+                              : "bg-red-500"
+                        )}
+                      />
+                    </TableCell>
                   </TableRow>
                 ))}
                 {/* Summary row */}
@@ -1039,6 +1162,9 @@ function FinancialTab() {
                     Total ({data.summary.contractCount} contracts)
                   </TableCell>
                   <TableCell />
+                  <TableCell className="text-right text-sm">
+                    {data.summary.totalWeeklyHours.toFixed(1)}
+                  </TableCell>
                   <TableCell className="text-right">
                     {formatCurrencyDecimal(data.summary.totalMonthlyRevenue)}
                   </TableCell>
@@ -1059,6 +1185,7 @@ function FinancialTab() {
                       {data.summary.overallMarginPercent}%
                     </Badge>
                   </TableCell>
+                  <TableCell />
                 </TableRow>
               </TableBody>
             </Table>

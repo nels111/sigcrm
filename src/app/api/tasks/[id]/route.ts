@@ -67,7 +67,28 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Check that the task exists
     const existing = await prisma.task.findUnique({
       where: { id },
-      select: { id: true, status: true, completedAt: true },
+      select: {
+        id: true,
+        status: true,
+        completedAt: true,
+        title: true,
+        description: true,
+        assignedTo: true,
+        createdBy: true,
+        taskType: true,
+        priority: true,
+        dealId: true,
+        leadId: true,
+        contactId: true,
+        accountId: true,
+        contractId: true,
+        subcontractorId: true,
+        dueDate: true,
+        isRecurring: true,
+        recurrenceRule: true,
+        recurringParentId: true,
+        notes: true,
+      },
     });
 
     if (!existing) {
@@ -96,6 +117,62 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       existing.status === "completed"
     ) {
       updateData.completedAt = null;
+    }
+
+    // If completing a recurring task, auto-create the next occurrence
+    if (
+      updateData.status === "completed" &&
+      existing.status !== "completed" &&
+      existing.isRecurring &&
+      existing.recurrenceRule
+    ) {
+      try {
+        const baseDue = existing.dueDate ? new Date(existing.dueDate) : new Date();
+        let nextDue: Date;
+
+        switch (existing.recurrenceRule) {
+          case "daily":
+            nextDue = new Date(baseDue.getTime() + 1 * 24 * 60 * 60 * 1000);
+            break;
+          case "weekly":
+            nextDue = new Date(baseDue.getTime() + 7 * 24 * 60 * 60 * 1000);
+            break;
+          case "monthly":
+            nextDue = new Date(baseDue);
+            nextDue.setMonth(nextDue.getMonth() + 1);
+            break;
+          case "quarterly":
+            nextDue = new Date(baseDue);
+            nextDue.setMonth(nextDue.getMonth() + 3);
+            break;
+          default:
+            nextDue = new Date(baseDue.getTime() + 7 * 24 * 60 * 60 * 1000);
+        }
+
+        await prisma.task.create({
+          data: {
+            title: existing.title,
+            description: existing.description,
+            assignedTo: existing.assignedTo,
+            createdBy: existing.createdBy,
+            taskType: existing.taskType,
+            priority: existing.priority,
+            dealId: existing.dealId,
+            leadId: existing.leadId,
+            contactId: existing.contactId,
+            accountId: existing.accountId,
+            contractId: existing.contractId,
+            subcontractorId: existing.subcontractorId,
+            dueDate: nextDue,
+            isRecurring: true,
+            recurrenceRule: existing.recurrenceRule,
+            recurringParentId: existing.recurringParentId || id,
+            notes: existing.notes,
+          },
+        });
+      } catch (recurError) {
+        console.error("Failed to create next recurring task occurrence:", recurError);
+      }
     }
 
     const task = await prisma.task.update({

@@ -35,6 +35,8 @@ import {
   BarChart3,
   ChevronsLeft,
   ChevronsRight,
+  Inbox,
+  Bell,
 } from "lucide-react";
 
 interface NavItem {
@@ -63,6 +65,7 @@ const navSections: NavSection[] = [
     title: "SALES",
     items: [
       { label: "Quotes", href: "/quotes", icon: FileText },
+      { label: "Emails", href: "/emails", icon: Inbox },
       { label: "Marketing", href: "/marketing", icon: Mail },
       { label: "Calendar", href: "/calendar", icon: Calendar },
     ],
@@ -82,6 +85,7 @@ const navSections: NavSection[] = [
       { label: "Tasks", href: "/tasks", icon: CheckSquare },
       { label: "Documents", href: "/documents", icon: FolderOpen },
       { label: "Reports", href: "/reports", icon: BarChart3 },
+      { label: "Notifications", href: "/notifications", icon: Bell },
     ],
   },
 ];

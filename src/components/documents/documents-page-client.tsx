@@ -15,6 +15,7 @@ import {
   FolderOpen,
   ChevronDown,
   ChevronUp,
+  Wand2,
 } from "lucide-react";
 import {
   Table,
@@ -233,6 +234,14 @@ export function DocumentsPageClient() {
   const [deleteTarget, setDeleteTarget] = useState<Document | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Generate document dialog
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [genTemplate, setGenTemplate] = useState("");
+  const [genEntityId, setGenEntityId] = useState("");
+  const [genContracts, setGenContracts] = useState<LinkedEntity[]>([]);
+  const [genAudits, setGenAudits] = useState<LinkedEntity[]>([]);
+
   // Linked entity options (for upload form)
   const [accounts, setAccounts] = useState<LinkedEntity[]>([]);
   const [contracts, setContracts] = useState<LinkedEntity[]>([]);
@@ -333,6 +342,117 @@ export function DocumentsPageClient() {
 
     fetchOptions();
   }, [uploadOpen]);
+
+  // Fetch entity options when generate dialog opens
+  useEffect(() => {
+    if (!generateOpen) return;
+
+    async function fetchGenOptions() {
+      try {
+        const [conRes, auditRes] = await Promise.all([
+          fetch("/api/contracts?limit=100"),
+          fetch("/api/audits?limit=100"),
+        ]);
+
+        if (conRes.ok) {
+          const conJson = await conRes.json();
+          const conData = conJson.data || conJson;
+          setGenContracts(
+            Array.isArray(conData)
+              ? conData.map(
+                  (c: { id: string; contractName: string; unitId?: string }) => ({
+                    id: c.id,
+                    name: c.unitId ? `${c.contractName} (${c.unitId})` : c.contractName,
+                  })
+                )
+              : []
+          );
+        }
+
+        if (auditRes.ok) {
+          const auditJson = await auditRes.json();
+          const auditData = auditJson.data || auditJson;
+          setGenAudits(
+            Array.isArray(auditData)
+              ? auditData.map(
+                  (a: { id: string; auditDate: string; contract?: { contractName: string } }) => ({
+                    id: a.id,
+                    name: `${a.contract?.contractName || "Audit"} — ${new Date(a.auditDate).toLocaleDateString("en-GB")}`,
+                  })
+                )
+              : []
+          );
+        }
+      } catch {
+        // Non-critical
+      }
+    }
+
+    fetchGenOptions();
+  }, [generateOpen]);
+
+  // Generate document handler
+  async function handleGenerate() {
+    if (!genTemplate || !genEntityId) {
+      toast({
+        title: "Missing fields",
+        description: "Please select a template and an entity.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/documents/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateName: genTemplate,
+          entityId: genEntityId,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Generation failed");
+      }
+
+      const json = await res.json();
+
+      toast({
+        title: "Document generated",
+        description: `${json.data.name} created successfully.`,
+      });
+
+      // Reset and close
+      setGenTemplate("");
+      setGenEntityId("");
+      setGenerateOpen(false);
+      fetchDocuments();
+
+      // Open download in new tab
+      if (json.data.downloadUrl) {
+        window.open(json.data.downloadUrl, "_blank");
+      }
+    } catch (err) {
+      toast({
+        title: "Generation failed",
+        description:
+          err instanceof Error ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  // Entity options based on selected template
+  const genEntityOptions =
+    genTemplate === "audit-report" ? genAudits : genContracts;
+
+  const genEntityLabel =
+    genTemplate === "audit-report" ? "Select Audit" : "Select Contract";
 
   // Handle file selection
   function handleFileSelect(file: File) {
@@ -476,10 +596,20 @@ export function DocumentsPageClient() {
             {total} document{total !== 1 ? "s" : ""} stored
           </p>
         </div>
-        <Button className="gap-2" onClick={() => setUploadOpen(true)}>
-          <Upload className="h-4 w-4" />
-          Upload
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => setGenerateOpen(true)}
+          >
+            <Wand2 className="h-4 w-4" />
+            Generate
+          </Button>
+          <Button className="gap-2" onClick={() => setUploadOpen(true)}>
+            <Upload className="h-4 w-4" />
+            Upload
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -954,6 +1084,107 @@ export function DocumentsPageClient() {
                 <>
                   <Trash2 className="h-4 w-4" />
                   Delete
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Generate Document Dialog */}
+      <Dialog
+        open={generateOpen}
+        onOpenChange={(open) => {
+          setGenerateOpen(open);
+          if (!open) {
+            setGenTemplate("");
+            setGenEntityId("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Generate Document</DialogTitle>
+            <DialogDescription>
+              Select a template and entity to generate a PDF document.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Template selector */}
+            <div className="space-y-2">
+              <Label>Template</Label>
+              <Select
+                value={genTemplate}
+                onValueChange={(v) => {
+                  setGenTemplate(v);
+                  setGenEntityId(""); // reset entity when template changes
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select template..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="contract-summary">Contract Summary</SelectItem>
+                  <SelectItem value="client-welcome">Client Welcome Pack</SelectItem>
+                  <SelectItem value="scope-of-works">Scope of Works</SelectItem>
+                  <SelectItem value="audit-report">Audit Report</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Entity selector */}
+            {genTemplate && (
+              <div className="space-y-2">
+                <Label>{genEntityLabel}</Label>
+                <Select value={genEntityId} onValueChange={setGenEntityId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={`${genEntityLabel}...`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {genEntityOptions.length === 0 ? (
+                      <SelectItem value="__none__" disabled>
+                        No {genTemplate === "audit-report" ? "audits" : "contracts"} found
+                      </SelectItem>
+                    ) : (
+                      genEntityOptions.map((e) => (
+                        <SelectItem key={e.id} value={e.id}>
+                          {e.name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setGenTemplate("");
+                setGenEntityId("");
+                setGenerateOpen(false);
+              }}
+              disabled={generating}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleGenerate}
+              disabled={!genTemplate || !genEntityId || generating}
+              className="gap-2"
+            >
+              {generating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Wand2 className="h-4 w-4" />
+                  Generate
                 </>
               )}
             </Button>

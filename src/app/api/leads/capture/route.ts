@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { LeadSource, CadenceStatus } from "@prisma/client";
+import { sendNotificationEmail } from "@/lib/notification-email";
 
 // CORS headers for cross-domain landing page access
 const corsHeaders = {
@@ -182,42 +183,47 @@ export async function POST(request: NextRequest) {
     });
 
     // Create Notifications for Nick and Nelson
-    const sourceLabel = lead_source || "landing page";
+    const notifTitle = "New lead from landing page";
+    const notifMessage = `New lead from landing page: ${company_name}`;
+    const notifLink = `/leads/${lead.id}`;
     const notificationPromises = [
       prisma.notification.create({
         data: {
           userId: nickUser.id,
-          title: "New lead from landing page",
-          message: `New lead from landing page: ${company_name}`,
+          title: notifTitle,
+          message: notifMessage,
           notificationType: "new_lead",
           entityType: "lead",
           entityId: lead.id,
-          linkUrl: `/leads/${lead.id}`,
+          linkUrl: notifLink,
         },
       }),
     ];
+    // Send email notifications (best-effort)
+    sendNotificationEmail(nickUser.id, notifTitle, notifMessage, notifLink).catch(() => {});
 
     if (nelsonUser) {
       notificationPromises.push(
         prisma.notification.create({
           data: {
             userId: nelsonUser.id,
-            title: "New lead from landing page",
-            message: `New lead from landing page: ${company_name}`,
+            title: notifTitle,
+            message: notifMessage,
             notificationType: "new_lead",
             entityType: "lead",
             entityId: lead.id,
-            linkUrl: `/leads/${lead.id}`,
+            linkUrl: notifLink,
           },
         })
       );
+      sendNotificationEmail(nelsonUser.id, notifTitle, notifMessage, notifLink).catch(() => {});
     }
 
     // Create Activity
     const activityPromise = prisma.activity.create({
       data: {
         activityType: "note",
-        subject: `Lead captured from ${sourceLabel}`,
+        subject: `Lead captured from ${lead_source || "landing page"}`,
         body: `New lead captured. Company: ${company_name}, Contact: ${contact_name} (${contact_email})${utm_source ? `. UTM Source: ${utm_source}` : ""}${utm_campaign ? `, Campaign: ${utm_campaign}` : ""}`,
         leadId: lead.id,
         performedBy: nickUser.id,

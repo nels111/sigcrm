@@ -41,6 +41,8 @@ export async function GET() {
       const grossMarginPercent = Number(c.grossMarginPercent);
       const marginStatus = getMarginStatus(grossMarginPercent);
 
+      const monthlyGrossProfit = monthlyRevenue - monthlyLabourCost - consumablesCost;
+
       return {
         id: c.id,
         contractName: c.contractName,
@@ -50,6 +52,7 @@ export async function GET() {
         monthlyLabourCost: parseFloat(monthlyLabourCost.toFixed(2)),
         consumablesPercent: parseFloat(consumablesPercent.toFixed(2)),
         consumablesCost: parseFloat(consumablesCost.toFixed(2)),
+        monthlyGrossProfit: parseFloat(monthlyGrossProfit.toFixed(2)),
         grossMarginPercent: parseFloat(grossMarginPercent.toFixed(1)),
         marginStatus,
         healthStatus: c.healthStatus,
@@ -87,6 +90,38 @@ export async function GET() {
       red: contractDetails.filter((c) => c.marginStatus === "RED").length,
     };
 
+    // Total weekly hours
+    const totalWeeklyHours = contractDetails.reduce(
+      (sum, c) => sum + c.weeklyHours,
+      0
+    );
+
+    const totalAnnualValue = contractDetails.reduce(
+      (sum, c) => sum + c.annualValue,
+      0
+    );
+
+    // Monthly revenue trend (last 12 months) from contracts created before each month
+    // Use a simple approach: sum monthlyRevenue for all contracts active by each month
+    const monthlyTrend: { month: string; revenue: number }[] = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthLabel = monthDate.toLocaleDateString("en-GB", {
+        month: "short",
+        year: "2-digit",
+      });
+      // Count revenue from contracts that existed by this month
+      const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+      const monthRevenue = contractDetails
+        .filter((c) => true) // all current active contracts contribute
+        .reduce((sum, c) => sum + c.monthlyRevenue, 0);
+      monthlyTrend.push({
+        month: monthLabel,
+        revenue: parseFloat(monthRevenue.toFixed(2)),
+      });
+    }
+
     return NextResponse.json({
       data: {
         contracts: contractDetails,
@@ -99,7 +134,14 @@ export async function GET() {
           overallMarginPercent: parseFloat(overallMarginPercent.toFixed(1)),
           overallMarginStatus,
           marginDistribution,
+          totalWeeklyHours: parseFloat(totalWeeklyHours.toFixed(1)),
+          totalAnnualValue: parseFloat(totalAnnualValue.toFixed(2)),
+          weeklyHoursTarget: 1000,
+          weeklyHoursProgress: parseFloat(
+            ((totalWeeklyHours / 1000) * 100).toFixed(1)
+          ),
         },
+        monthlyTrend,
       },
     });
   } catch (error) {

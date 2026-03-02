@@ -48,6 +48,14 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { ConvertLeadDialog } from "@/components/leads/convert-lead-dialog";
+import { CreateTaskDialog } from "@/components/shared/create-task-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -399,6 +407,8 @@ export default function LeadDetailPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [callDialogOpen, setCallDialogOpen] = useState(false);
 
   // Notes editing
   const [editingNotes, setEditingNotes] = useState(false);
@@ -586,15 +596,20 @@ export default function LeadDetailPage() {
 
       {/* Quick Actions */}
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="sm" className="gap-1.5">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCallDialogOpen(true)}>
           <PhoneCall className="h-3.5 w-3.5" />
           Log Call
         </Button>
-        <Button variant="outline" size="sm" className="gap-1.5">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => router.push(`/emails?compose=true&leadId=${leadId}&to=${lead.contactEmail || ""}`)}
+        >
           <Send className="h-3.5 w-3.5" />
           Send Email
         </Button>
-        <Button variant="outline" size="sm" className="gap-1.5">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setTaskDialogOpen(true)}>
           <ClipboardList className="h-3.5 w-3.5" />
           Create Task
         </Button>
@@ -1057,6 +1072,126 @@ export default function LeadDetailPage() {
           fetchLead();
         }}
       />
+
+      {/* Create Task Dialog */}
+      <CreateTaskDialog
+        open={taskDialogOpen}
+        onOpenChange={setTaskDialogOpen}
+        leadId={leadId}
+        onSuccess={fetchLead}
+      />
+
+      {/* Log Call Dialog */}
+      <LeadCallDialog
+        open={callDialogOpen}
+        onOpenChange={setCallDialogOpen}
+        leadId={leadId}
+        onSuccess={fetchLead}
+      />
     </div>
+  );
+}
+
+function LeadCallDialog({
+  open,
+  onOpenChange,
+  leadId,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  leadId: string;
+  onSuccess: () => void;
+}) {
+  const { toast } = useToast();
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [duration, setDuration] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setSubject("");
+      setBody("");
+      setDuration("");
+    }
+  }, [open]);
+
+  async function handleSubmit() {
+    if (!subject.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/activities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activityType: "call",
+          subject,
+          body,
+          leadId,
+          metadata: duration ? { duration: parseInt(duration) } : {},
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "Call logged", description: "Call activity recorded." });
+      onOpenChange(false);
+      onSuccess();
+    } catch {
+      toast({ title: "Error", description: "Failed to log call.", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[440px]">
+        <DialogHeader>
+          <DialogTitle>Log Call</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div>
+            <Label htmlFor="call-subject">Subject</Label>
+            <Input
+              id="call-subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="Call with..."
+              className="mt-1"
+              autoFocus
+            />
+          </div>
+          <div>
+            <Label htmlFor="call-notes">Notes</Label>
+            <Textarea
+              id="call-notes"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Call notes..."
+              className="mt-1"
+              rows={4}
+            />
+          </div>
+          <div>
+            <Label htmlFor="call-duration">Duration (minutes)</Label>
+            <Input
+              id="call-duration"
+              type="number"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              placeholder="e.g. 15"
+              className="mt-1 w-32"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button disabled={submitting || !subject.trim()} onClick={handleSubmit}>
+            {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Log Call
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

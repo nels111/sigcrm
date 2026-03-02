@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -11,9 +11,11 @@ import {
   FileText,
   Loader2,
   PoundSterling,
+  Search,
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -99,6 +101,14 @@ interface SuccessData {
   leadId?: string;
 }
 
+interface ExistingLeadMatch {
+  id: string;
+  companyName: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  leadStatus: string;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -139,6 +149,40 @@ export function QuoteForm() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [successData, setSuccessData] = useState<SuccessData | null>(null);
+  const [existingLeads, setExistingLeads] = useState<ExistingLeadMatch[]>([]);
+  const [leadSearching, setLeadSearching] = useState(false);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const leadSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced search for existing leads when company name changes
+  useEffect(() => {
+    if (leadSearchTimer.current) clearTimeout(leadSearchTimer.current);
+    const name = form.companyName.trim();
+    if (name.length < 3) {
+      setExistingLeads([]);
+      setSelectedLeadId(null);
+      return;
+    }
+    setLeadSearching(true);
+    leadSearchTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/leads?search=${encodeURIComponent(name)}&limit=5`
+        );
+        if (res.ok) {
+          const json = await res.json();
+          setExistingLeads(json.data || []);
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLeadSearching(false);
+      }
+    }, 500);
+    return () => {
+      if (leadSearchTimer.current) clearTimeout(leadSearchTimer.current);
+    };
+  }, [form.companyName]);
 
   // ── Field updater ──
   const updateField = useCallback(
@@ -290,7 +334,7 @@ export function QuoteForm() {
     setSubmitting(true);
 
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         companyName: form.companyName.trim(),
         address: form.address.trim(),
         contactName: form.contactName.trim(),
@@ -305,6 +349,11 @@ export function QuoteForm() {
         overheadCostWeekly: parseFloat(form.overheadCostWeekly) || 0,
         applyPilotPricing: form.applyPilotPricing,
       };
+
+      // Link to existing lead if user selected one
+      if (selectedLeadId) {
+        payload.existingLeadId = selectedLeadId;
+      }
 
       const res = await fetch("/api/quotes", {
         method: "POST",
@@ -339,6 +388,8 @@ export function QuoteForm() {
 
   function handleCreateAnother() {
     setSuccessData(null);
+    setSelectedLeadId(null);
+    setExistingLeads([]);
     setForm({
       companyName: "",
       address: "",
@@ -404,6 +455,69 @@ export function QuoteForm() {
                   />
                   {errors.companyName && (
                     <p className="text-xs text-red-600">{errors.companyName}</p>
+                  )}
+                  {/* Existing lead matches */}
+                  {leadSearching && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Search className="h-3 w-3 animate-pulse" />
+                      Checking for existing leads...
+                    </p>
+                  )}
+                  {!leadSearching && existingLeads.length > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                      <p className="text-xs font-medium text-amber-800 flex items-center gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        Existing lead(s) found matching this company
+                      </p>
+                      {existingLeads.map((lead) => (
+                        <div
+                          key={lead.id}
+                          className={`flex items-center justify-between rounded-md border p-2 text-xs cursor-pointer transition-colors ${
+                            selectedLeadId === lead.id
+                              ? "border-emerald-400 bg-emerald-50"
+                              : "border-amber-200 bg-white hover:bg-amber-50/50"
+                          }`}
+                          onClick={() =>
+                            setSelectedLeadId(
+                              selectedLeadId === lead.id ? null : lead.id
+                            )
+                          }
+                        >
+                          <div>
+                            <span className="font-medium">
+                              {lead.companyName}
+                            </span>
+                            {lead.contactName && (
+                              <span className="text-muted-foreground">
+                                {" "}
+                                — {lead.contactName}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className="text-[10px]"
+                            >
+                              {lead.leadStatus.replace(/([A-Z])/g, " $1").trim()}
+                            </Badge>
+                            {selectedLeadId === lead.id ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            ) : (
+                              <span className="text-[10px] text-amber-700">
+                                Click to link
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {selectedLeadId && (
+                        <p className="text-[10px] text-emerald-700">
+                          Quote will be linked to this existing lead instead of
+                          creating a new one.
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
 

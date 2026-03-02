@@ -5,6 +5,7 @@ import { Providers } from "@/components/providers";
 import { Sidebar } from "@/components/sidebar";
 import { TopBar } from "@/components/top-bar";
 import { QuickCapture } from "@/components/quick-capture";
+import { VoiceCapture } from "@/components/shared/voice-capture";
 
 export default function DashboardLayout({
   children,
@@ -39,6 +40,9 @@ export default function DashboardLayout({
 
       {/* Quick Capture FAB — always visible on dashboard */}
       <QuickCapture />
+
+      {/* Voice-to-CRM — mic button */}
+      <VoiceCapture />
     </Providers>
   );
 }

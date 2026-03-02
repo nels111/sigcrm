@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma, ContractStatus } from "@prisma/client";
+import { sendNotificationEmail } from "@/lib/notification-email";
 
 // ──────────────────────────────────────────────
 // EXIT CHECKLIST TASKS
@@ -125,10 +126,12 @@ export async function PUT(
       );
     }
 
-    // Check for status change to terminated
+    // Check for status transitions
     const newStatus = body.status as ContractStatus | undefined;
     const isTerminating =
       newStatus === "terminated" && existing.status !== "terminated";
+    const isActivating =
+      newStatus === "active" && existing.status === "mobilising";
 
     if (isTerminating && !body.exitReason) {
       return NextResponse.json(
@@ -217,6 +220,46 @@ export async function PUT(
         },
       },
     });
+
+    // If mobilising → active, log activity & notify
+    if (isActivating) {
+      await prisma.activity.create({
+        data: {
+          activityType: "contract_created",
+          subject: "Contract mobilisation completed",
+          body: `Contract "${contract.contractName || existing.contractName}" is now active.`,
+          contractId: contract.id,
+          accountId: contract.accountId ?? existing.accountId,
+          dealId: existing.dealId,
+        },
+      });
+
+      // Notify both admin and sales users
+      const usersToNotify = await prisma.user.findMany({
+        where: { role: { in: ["admin", "sales"] } },
+        select: { id: true },
+      });
+      if (usersToNotify.length > 0) {
+        const notifTitle = "Contract Now Active";
+        const notifMessage = `"${contract.contractName || existing.contractName}" has completed mobilisation and is now active.`;
+        const notifLink = `/contracts/${contract.id}`;
+        await prisma.notification.createMany({
+          data: usersToNotify.map((u) => ({
+            userId: u.id,
+            title: notifTitle,
+            message: notifMessage,
+            notificationType: "deal_won" as const,
+            linkUrl: notifLink,
+            entityType: "contract",
+            entityId: contract.id,
+          })),
+        });
+        // Send email to each user (best-effort)
+        for (const u of usersToNotify) {
+          sendNotificationEmail(u.id, notifTitle, notifMessage, notifLink).catch(() => {});
+        }
+      }
+    }
 
     // If terminated, create exit checklist tasks
     if (isTerminating) {

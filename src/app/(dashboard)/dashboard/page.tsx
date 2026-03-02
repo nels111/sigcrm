@@ -51,6 +51,7 @@ interface DashboardData {
     weeklyHours: number;
     monthlyRevenue: number;
     overdueAudits: number;
+    belowTargetMargin: number;
   };
   leads: {
     inCadence: number;
@@ -656,6 +657,18 @@ export default function DashboardPage() {
             <DashboardSkeleton />
           ) : (
             <>
+              {/* Tasks & Meetings at the TOP (Nick's preference) */}
+              <div className="grid gap-4 md:grid-cols-2">
+                <TasksSection
+                  tasks={d?.tasks.today ?? []}
+                  overdueCount={d?.tasks.overdueCount ?? 0}
+                />
+                <MeetingsSection meetings={d?.upcomingMeetings ?? []} />
+              </div>
+
+              <Separator />
+
+              {/* KPI Cards */}
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <KpiCard
                   title="Pipeline Value"
@@ -701,18 +714,50 @@ export default function DashboardPage() {
                 />
               </div>
 
+              {/* Financial KPIs */}
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <KpiCard
+                  title="Monthly Revenue"
+                  value={formatCurrency(d?.operations.monthlyRevenue ?? 0)}
+                  subtitle="Recurring monthly revenue"
+                  icon={PoundSterling}
+                  accentColor="blue"
+                />
+                <KpiCard
+                  title="Win Rate"
+                  value={`${d?.winLoss.winRate ?? 0}%`}
+                  subtitle={`${d?.winLoss.won ?? 0} won / ${d?.winLoss.lost ?? 0} lost`}
+                  icon={Target}
+                  accentColor={
+                    (d?.winLoss.winRate ?? 0) >= 50 ? "emerald" : "amber"
+                  }
+                />
+                <KpiCard
+                  title="Weekly Hours"
+                  value={String(d?.operations.weeklyHours ?? 0)}
+                  subtitle="Contracted cleaning hours"
+                  icon={Clock}
+                  progress={{
+                    current: d?.operations.weeklyHours ?? 0,
+                    target: 1000,
+                    unit: "hrs",
+                  }}
+                />
+                <KpiCard
+                  title="Below Target Margin"
+                  value={String(d?.operations.belowTargetMargin ?? 0)}
+                  subtitle="Contracts below 35% margin"
+                  icon={AlertTriangle}
+                  accentColor={
+                    (d?.operations.belowTargetMargin ?? 0) > 0 ? "red" : "emerald"
+                  }
+                />
+              </div>
+
               <Separator />
 
               <div className="grid gap-4 md:grid-cols-2">
-                <TasksSection
-                  tasks={d?.tasks.today ?? []}
-                  overdueCount={d?.tasks.overdueCount ?? 0}
-                />
                 <ActivitySection activities={d?.recentActivity ?? []} />
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <MeetingsSection meetings={d?.upcomingMeetings ?? []} />
                 <StaleDealsSection deals={d?.staleDeals ?? []} />
               </div>
             </>
