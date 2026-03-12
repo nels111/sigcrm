@@ -112,8 +112,10 @@ export async function GET() {
         year: "2-digit",
       });
       // Count revenue from contracts that existed by this month
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
       const monthRevenue = contractDetails
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         .filter((c) => true) // all current active contracts contribute
         .reduce((sum, c) => sum + c.monthlyRevenue, 0);
       monthlyTrend.push({

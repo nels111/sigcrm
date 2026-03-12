@@ -374,6 +374,7 @@ function formatDate(iso: string | null): string {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function formatDateTime(iso: string): string {
   try {
     return format(new Date(iso), "dd MMM yyyy HH:mm");
@@ -382,6 +383,7 @@ function formatDateTime(iso: string): string {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function activityTypeLabel(type: string): string {
   return type
     .split("_")
@@ -389,6 +391,7 @@ function activityTypeLabel(type: string): string {
     .join(" ");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function activityIcon(type: string) {
   switch (type) {
     case "call":

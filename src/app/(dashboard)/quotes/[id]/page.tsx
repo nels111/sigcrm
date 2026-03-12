@@ -198,7 +198,6 @@ export default function QuoteDetailPage() {
     const actionMap: Record<string, Record<string, unknown>> = {
       mark_accepted: { status: "accepted" },
       mark_rejected: { status: "rejected" },
-      resend: { status: "sent" },
     };
 
     const payload = actionMap[action];
@@ -225,6 +224,33 @@ export default function QuoteDetailPage() {
         title: "Error",
         description:
           err instanceof Error ? err.message : `Action failed.`,
+        variant: "destructive",
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleSendQuote() {
+    setActionLoading("send");
+    try {
+      const res = await fetch(`/api/quotes/${quoteId}/send`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Failed to send quote");
+      }
+      toast({
+        title: "Quote Sent",
+        description: `Quote sent to ${quote?.contactName} at ${quote?.contactEmail}`,
+      });
+      fetchQuote();
+    } catch (err) {
+      toast({
+        title: "Error",
+        description:
+          err instanceof Error ? err.message : "Failed to send quote.",
         variant: "destructive",
       });
     } finally {
@@ -300,31 +326,29 @@ export default function QuoteDetailPage() {
 
         {/* Actions */}
         <div className="flex items-center gap-2 flex-wrap">
-          {quote.pdfUrl && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => window.open(quote.pdfUrl!, "_blank")}
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download PDF
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => window.open(`/api/quotes/${quoteId}/pdf`, "_blank")}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download PDF
+          </Button>
           {quote.status !== "accepted" && quote.status !== "rejected" && (
             <Button
               variant="outline"
               size="sm"
               className="gap-1.5"
-              disabled={actionLoading === "resend"}
-              onClick={() => handleAction("resend")}
+              disabled={actionLoading === "send"}
+              onClick={() => handleSendQuote()}
             >
-              {actionLoading === "resend" ? (
+              {actionLoading === "send" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <Send className="h-3.5 w-3.5" />
               )}
-              Resend to Client
+              Send to Prospect
             </Button>
           )}
           {quote.status !== "accepted" && (

@@ -2,16 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
   AlertTriangle,
   ArrowLeft,
   Calculator,
   CheckCircle2,
-  FileText,
+  Download,
   Loader2,
   PoundSterling,
   Search,
+  Send,
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
@@ -32,12 +32,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { calculateQuote } from "@/lib/quote-calculator";
 import type { QuoteCalculation } from "@/lib/quote-calculator";
@@ -99,6 +99,16 @@ interface SuccessData {
   quoteId: string;
   dealId?: string;
   leadId?: string;
+  companyName: string;
+  contactName: string;
+  contactEmail: string;
+  monthlyTotal: number;
+  annualTotal: number;
+  grossMarginPercent: number;
+  frequency: string;
+  applyPilotPricing: boolean;
+  pilotMonthlyTotal: number | null;
+  standardMonthlyTotal: number | null;
 }
 
 interface ExistingLeadMatch {
@@ -368,11 +378,22 @@ export function QuoteForm() {
 
       const json = await res.json();
       const quoteData = json.data.quote || json.data;
+      const freq = `${form.frequencyPerWeek}x per week (${form.daysSelected.join(", ")}), ${form.hoursPerDay} hours per visit`;
       setSuccessData({
         quoteRef: quoteData.quoteRef,
         quoteId: quoteData.id,
         dealId: quoteData.dealId || json.data.linkedRecords?.dealId,
         leadId: quoteData.leadId || json.data.linkedRecords?.leadId,
+        companyName: form.companyName,
+        contactName: form.contactName,
+        contactEmail: form.contactEmail,
+        monthlyTotal: calculation?.monthlyTotal ?? 0,
+        annualTotal: calculation?.annualTotal ?? 0,
+        grossMarginPercent: calculation?.grossMarginPercent ?? 0,
+        frequency: freq,
+        applyPilotPricing: form.applyPilotPricing,
+        pilotMonthlyTotal: calculation?.pilot?.pilotMonthlyTotal ?? null,
+        standardMonthlyTotal: form.applyPilotPricing ? (calculation?.monthlyTotal ?? null) : null,
       });
     } catch (err) {
       toast({
@@ -384,28 +405,6 @@ export function QuoteForm() {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  function handleCreateAnother() {
-    setSuccessData(null);
-    setSelectedLeadId(null);
-    setExistingLeads([]);
-    setForm({
-      companyName: "",
-      address: "",
-      contactName: "",
-      contactEmail: "",
-      contactPhone: "",
-      hoursPerDay: "",
-      frequencyPerWeek: "",
-      daysSelected: [],
-      siteType: "",
-      marginPercent: "43.33",
-      productCostWeekly: "0",
-      overheadCostWeekly: "0",
-      applyPilotPricing: false,
-    });
-    setErrors({});
   }
 
   return (
@@ -1100,66 +1099,206 @@ export function QuoteForm() {
         </div>
       </form>
 
-      {/* Success Dialog */}
-      <Dialog
-        open={successData !== null}
-        onOpenChange={(open) => {
-          if (!open) setSuccessData(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
-              <CheckCircle2 className="h-6 w-6 text-emerald-600" />
-            </div>
-            <DialogTitle className="text-center">Quote Created</DialogTitle>
-            <DialogDescription className="text-center">
-              Your quote has been generated successfully.
-            </DialogDescription>
-          </DialogHeader>
+      {/* Quote Preview Sheet */}
+      <QuotePreviewSheet
+        data={successData}
+        onClose={() => setSuccessData(null)}
+      />
+    </>
+  );
+}
 
-          {successData && (
-            <div className="space-y-4">
-              <div className="text-center">
-                <p className="text-sm text-muted-foreground">Quote Reference</p>
-                <p className="text-lg font-bold tracking-wide">
-                  {successData.quoteRef}
+// ---------------------------------------------------------------------------
+// Quote Preview Sheet (side drawer after quote creation)
+// ---------------------------------------------------------------------------
+
+function QuotePreviewSheet({
+  data,
+  onClose,
+}: {
+  data: SuccessData | null;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const router = useRouter();
+  const [sending, setSending] = useState(false);
+
+  if (!data) return <Sheet open={false}><SheetContent><SheetHeader><SheetTitle /></SheetHeader></SheetContent></Sheet>;
+
+  async function handleSend() {
+    if (!data) return;
+    setSending(true);
+    try {
+      const res = await fetch(`/api/quotes/${data.quoteId}/send`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Failed to send quote");
+      }
+      toast({
+        title: "Quote Sent",
+        description: `Quote sent to ${data.contactName} at ${data.contactEmail}`,
+      });
+      onClose();
+      router.push("/quotes");
+      router.refresh();
+    } catch (err) {
+      toast({
+        title: "Error",
+        description:
+          err instanceof Error ? err.message : "Failed to send quote.",
+        variant: "destructive",
+      });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Sheet open={data !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <SheetContent side="right" className="sm:max-w-lg overflow-y-auto">
+        <SheetHeader className="mb-6">
+          <div className="flex items-center gap-2 mb-1">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+            <SheetTitle>Quote Created</SheetTitle>
+          </div>
+          <SheetDescription>
+            Review and send to your prospect, or save as draft.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="space-y-6">
+          {/* Quote Details */}
+          <div className="space-y-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Quote Ref</span>
+              <span className="font-mono font-medium">{data.quoteRef}</span>
+            </div>
+            <Separator />
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Company</span>
+              <span className="font-medium">{data.companyName}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Contact</span>
+              <span className="font-medium">{data.contactName}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Email</span>
+              <span className="font-medium text-emerald-600">{data.contactEmail}</span>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Pricing */}
+          <div className="space-y-3">
+            <div className="text-center p-4 rounded-lg bg-emerald-50 border border-emerald-200">
+              <p className="text-[10px] uppercase tracking-wide text-emerald-700 font-medium">
+                Monthly Total
+              </p>
+              <p className="text-2xl font-bold text-emerald-700">
+                {formatGBP(data.monthlyTotal)}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="text-center p-3 rounded-lg bg-muted/50 border">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                  Annual Total
+                </p>
+                <p className="text-lg font-bold">{formatGBP(data.annualTotal)}</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-muted/50 border">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                  Gross Margin
+                </p>
+                <p className={`text-lg font-bold ${data.grossMarginPercent < 25 ? "text-red-600" : "text-emerald-700"}`}>
+                  {data.grossMarginPercent.toFixed(1)}%
                 </p>
               </div>
-
-              <div className="flex flex-col gap-2">
-                <Link href={`/quotes/${successData.quoteId}`}>
-                  <Button variant="outline" className="w-full gap-2">
-                    <FileText className="h-4 w-4" />
-                    View Quote PDF
-                  </Button>
-                </Link>
-                {successData.dealId && (
-                  <Link href={`/deals/${successData.dealId}`}>
-                    <Button variant="outline" className="w-full gap-2">
-                      View Deal
-                    </Button>
-                  </Link>
-                )}
-                {successData.leadId && (
-                  <Link href={`/leads/${successData.leadId}`}>
-                    <Button variant="outline" className="w-full gap-2">
-                      View Lead
-                    </Button>
-                  </Link>
-                )}
-                <Button
-                  onClick={handleCreateAnother}
-                  className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Create Another Quote
-                </Button>
-              </div>
             </div>
+          </div>
+
+          {/* Frequency */}
+          <div className="text-sm">
+            <p className="text-muted-foreground text-xs uppercase tracking-wide font-medium mb-1">
+              Frequency
+            </p>
+            <p>{data.frequency}</p>
+          </div>
+
+          {/* Pilot Pricing */}
+          {data.applyPilotPricing && data.pilotMonthlyTotal != null && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
+                  Pilot Pricing (30 days)
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="text-center p-3 rounded-lg bg-blue-50 border border-blue-200">
+                    <p className="text-[10px] uppercase tracking-wide text-blue-700 font-medium">
+                      Pilot Price
+                    </p>
+                    <p className="text-lg font-bold text-blue-800">
+                      {formatGBP(data.pilotMonthlyTotal)}
+                    </p>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-white border border-blue-200">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                      Standard Price
+                    </p>
+                    <p className="text-lg font-bold">
+                      {formatGBP(data.standardMonthlyTotal ?? data.monthlyTotal)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
-        </DialogContent>
-      </Dialog>
-    </>
+
+          <Separator />
+
+          {/* Actions */}
+          <div className="space-y-3">
+            <Button
+              className="w-full gap-2"
+              variant="outline"
+              onClick={() =>
+                window.open(`/api/quotes/${data.quoteId}/pdf`, "_blank")
+              }
+            >
+              <Download className="h-4 w-4" />
+              Download PDF
+            </Button>
+
+            <Button
+              className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700"
+              disabled={sending}
+              onClick={handleSend}
+            >
+              {sending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              Send to Prospect
+            </Button>
+
+            <Button
+              className="w-full gap-2"
+              variant="ghost"
+              onClick={() => {
+                onClose();
+                router.push("/quotes");
+              }}
+            >
+              Save as Draft
+            </Button>
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
