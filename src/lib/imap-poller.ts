@@ -214,13 +214,16 @@ async function matchContact(senderEmail: string) {
 /**
  * Process a single parsed inbound email: create Email record + Activity.
  */
-async function processInboundEmail(parsed: ParsedEmail): Promise<void> {
+async function processInboundEmail(
+  parsed: ParsedEmail,
+  account: MailboxAccount
+): Promise<boolean> {
   // Check for duplicate by messageId to avoid re-processing
   if (parsed.messageId) {
     const existing = await prisma.email.findFirst({
       where: { messageId: parsed.messageId },
     });
-    if (existing) return;
+    if (existing) return false;
   }
 
   const match = await matchContact(parsed.fromAddress);
@@ -253,6 +256,8 @@ async function processInboundEmail(parsed: ParsedEmail): Promise<void> {
       attachments: JSON.stringify(parsed.attachments),
       status: EmailStatus.received,
       receivedAt: parsed.receivedAt,
+      mailAccount: account.alias,
+      isRead: false,
     },
   });
 
@@ -272,6 +277,8 @@ async function processInboundEmail(parsed: ParsedEmail): Promise<void> {
       },
     },
   });
+
+  return true;
 }
 
 /**
@@ -303,30 +310,28 @@ async function pollMailbox(account: MailboxAccount): Promise<number> {
     const lock = await client.getMailboxLock("INBOX");
 
     try {
-      // Search for unseen messages
-      const uids = await client.search({ seen: false }, { uid: true });
+      // Get mailbox status to determine range
+      const status = await client.status("INBOX", { messages: true });
+      const totalMessages = status.messages ?? 0;
+      if (totalMessages === 0) return 0;
 
-      if (!uids || uids.length === 0) {
-        return 0;
-      }
+      // Fetch the last 200 messages (all, not just unseen)
+      const fetchLimit = 200;
+      const startSeq = Math.max(1, totalMessages - fetchLimit + 1);
 
-      // Fetch in batches of unseen UIDs
       for await (const msg of client.fetch(
-        uids.join(","),
+        `${startSeq}:*`,
         {
           uid: true,
           envelope: true,
           bodyStructure: true,
-        },
-        { uid: true }
+          flags: true,
+        }
       )) {
         try {
           const parsed = await parseMessage(client, msg);
-          await processInboundEmail(parsed);
-
-          // Mark as seen
-          await client.messageFlagsAdd(String(msg.uid), ["\\Seen"], { uid: true });
-          processed++;
+          const wasNew = await processInboundEmail(parsed, account);
+          if (wasNew) processed++;
         } catch (msgError) {
           console.error(
             `[IMAP] Error processing message UID ${msg.uid} in ${account.alias}:`,
