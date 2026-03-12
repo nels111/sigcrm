@@ -35,6 +35,8 @@ export async function fetchEmails(
     secure: true,
     auth: { user: creds.user, pass: creds.pass },
     logger: false,
+    socketTimeout: 30000,
+    greetingTimeout: 15000,
   });
 
   await client.connect();
@@ -81,6 +83,8 @@ export async function markAsRead(
     secure: true,
     auth: { user: creds.user, pass: creds.pass },
     logger: false,
+    socketTimeout: 30000,
+    greetingTimeout: 15000,
   });
   await client.connect();
   await client.mailboxOpen("INBOX");

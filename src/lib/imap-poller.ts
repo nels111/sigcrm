@@ -290,6 +290,9 @@ async function pollMailbox(account: MailboxAccount): Promise<number> {
       pass: account.password,
     },
     logger: false,
+    socketTimeout: 30000,
+    greetingTimeout: 15000,
+    emitLogs: false,
   });
 
   let processed = 0;
