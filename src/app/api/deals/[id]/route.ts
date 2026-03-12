@@ -73,6 +73,23 @@ export async function GET(
             },
           },
         },
+        emails: {
+          orderBy: [{ sentAt: "desc" }, { createdAt: "desc" }],
+          take: 20,
+          select: {
+            id: true,
+            direction: true,
+            fromAddress: true,
+            toAddress: true,
+            subject: true,
+            bodyHtml: true,
+            bodyText: true,
+            status: true,
+            sentAt: true,
+            receivedAt: true,
+            createdAt: true,
+          },
+        },
         documents: {
           orderBy: { createdAt: "desc" },
         },

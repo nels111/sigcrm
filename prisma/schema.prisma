@@ -772,6 +772,18 @@ model Email {
   sentAt         DateTime?   @map("sent_at") @db.Timestamptz
   receivedAt     DateTime?   @map("received_at") @db.Timestamptz
   createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  // IMAP sync
+  uid            String?     @db.VarChar(255)
+  folder         String      @default("INBOX") @db.VarChar(100)
+  isRead         Boolean     @default(false) @map("is_read")
+  hasAttachments Boolean     @default(false) @map("has_attachments")
+  rawFrom        String?     @map("raw_from")
+  rawTo          String?     @map("raw_to")
+  mailAccount    String      @default("nick") @map("mail_account") @db.VarChar(50)
+  // Open tracking
+  trackingId     String?     @unique @map("tracking_id") @db.VarChar(255)
+  openCount      Int         @default(0) @map("open_count")
+  lastOpenedAt   DateTime?   @map("last_opened_at") @db.Timestamptz
 
   // Relations
   deal    Deal?    @relation(fields: [dealId], references: [id])

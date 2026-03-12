@@ -83,6 +83,8 @@ interface EmailRow {
   fromAddress: string;
   toAddress: string;
   subject: string | null;
+  bodyHtml: string | null;
+  bodyText: string | null;
   status: string;
   sentAt: string | null;
   receivedAt: string | null;
@@ -186,6 +188,103 @@ function activityTypeLabel(type: string): string {
     .split("_")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
+}
+
+// ---------------------------------------------------------------------------
+// EmailListCard — expandable email rows with direction border
+// ---------------------------------------------------------------------------
+
+function EmailListCard({ emails }: { emails: EmailRow[] }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Mail className="h-4 w-4" />
+          Emails ({emails.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {emails.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">
+            No emails recorded.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {emails.slice(0, 15).map((email) => {
+              const isExpanded = expandedId === email.id;
+              return (
+                <div
+                  key={email.id}
+                  className={cn(
+                    "rounded-lg border text-sm overflow-hidden",
+                    email.direction === "outbound"
+                      ? "border-l-4 border-l-[#0B3D91]"
+                      : "border-l-4 border-l-gray-300"
+                  )}
+                >
+                  <button
+                    onClick={() =>
+                      setExpandedId(isExpanded ? null : email.id)
+                    }
+                    className="w-full text-left flex items-center gap-3 p-2.5 hover:bg-muted/50 transition-colors"
+                  >
+                    <div
+                      className={cn(
+                        "h-7 w-7 rounded-full flex items-center justify-center shrink-0",
+                        email.direction === "outbound"
+                          ? "bg-emerald-100 text-emerald-600"
+                          : "bg-sky-100 text-sky-600"
+                      )}
+                    >
+                      {email.direction === "outbound" ? (
+                        <Send className="h-3.5 w-3.5" />
+                      ) : (
+                        <Mail className="h-3.5 w-3.5" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">
+                        {email.subject || "(No subject)"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {email.direction === "outbound" ? "To" : "From"}:{" "}
+                        {email.direction === "outbound"
+                          ? email.toAddress
+                          : email.fromAddress}
+                      </p>
+                    </div>
+                    <div className="text-xs text-muted-foreground whitespace-nowrap">
+                      {formatDate(
+                        email.sentAt || email.receivedAt || email.createdAt
+                      )}
+                    </div>
+                  </button>
+                  {isExpanded && (
+                    <div className="px-4 pb-3 pt-1 border-t bg-muted/20">
+                      {email.bodyHtml ? (
+                        <div
+                          className="text-sm prose prose-sm max-w-none [&_img]:max-w-full"
+                          dangerouslySetInnerHTML={{
+                            __html: email.bodyHtml,
+                          }}
+                        />
+                      ) : (
+                        <pre className="text-sm whitespace-pre-wrap font-sans text-muted-foreground">
+                          {email.bodyText || "No content"}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -583,59 +682,7 @@ export default function ContactDetailPage() {
           </Card>
 
           {/* Emails section */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Mail className="h-4 w-4" />
-                Emails ({contact.emails.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {contact.emails.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">
-                  No emails recorded.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {contact.emails.slice(0, 10).map((email) => (
-                    <div
-                      key={email.id}
-                      className="flex items-center gap-3 p-2.5 rounded-lg border text-sm"
-                    >
-                      <div
-                        className={cn(
-                          "h-7 w-7 rounded-full flex items-center justify-center shrink-0",
-                          email.direction === "outbound"
-                            ? "bg-emerald-100 text-emerald-600"
-                            : "bg-sky-100 text-sky-600"
-                        )}
-                      >
-                        {email.direction === "outbound" ? (
-                          <Send className="h-3.5 w-3.5" />
-                        ) : (
-                          <Mail className="h-3.5 w-3.5" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">
-                          {email.subject || "(No subject)"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {email.direction === "outbound" ? "To" : "From"}:{" "}
-                          {email.direction === "outbound"
-                            ? email.toAddress
-                            : email.fromAddress}
-                        </p>
-                      </div>
-                      <div className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatDate(email.sentAt || email.receivedAt || email.createdAt)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <EmailListCard emails={contact.emails} />
         </div>
 
         {/* Right panel */}

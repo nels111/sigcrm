@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import {
+  generateTrackingId,
+  injectTrackingPixel,
+} from "@/lib/email-tracker";
+import {
   Prisma,
   EmailDirection,
   EmailStatus,
@@ -84,7 +88,7 @@ export async function GET(request: NextRequest) {
           },
           account: { select: { id: true, name: true } },
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ sentAt: "desc" }, { createdAt: "desc" }],
         skip,
         take: limit,
       }),
@@ -153,6 +157,10 @@ export async function POST(request: NextRequest) {
         ? process.env.NICK_EMAIL || "nick@signature-cleans.co.uk"
         : process.env.NELSON_EMAIL || "nelson@signature-cleans.co.uk";
 
+    // Inject open-tracking pixel
+    const trackingId = generateTrackingId();
+    const trackedHtml = injectTrackingPixel(bodyHtml, trackingId);
+
     // Send via SMTP
     let smtpResult;
     try {
@@ -162,7 +170,7 @@ export async function POST(request: NextRequest) {
         cc: body.cc || undefined,
         bcc: body.bcc || undefined,
         subject,
-        html: bodyHtml,
+        html: trackedHtml,
         text: body.bodyText || undefined,
         attachments: body.attachments || undefined,
       });
@@ -217,7 +225,7 @@ export async function POST(request: NextRequest) {
         ccAddresses: body.cc ? [body.cc] : [],
         bccAddresses: body.bcc ? [body.bcc] : [],
         subject,
-        bodyHtml,
+        bodyHtml: trackedHtml,
         bodyText: body.bodyText || null,
         messageId: smtpResult.messageId || null,
         inReplyTo: body.inReplyTo || null,
@@ -229,6 +237,8 @@ export async function POST(request: NextRequest) {
         attachments: body.attachments ? JSON.stringify(body.attachments) : "[]",
         status: EmailStatus.sent,
         sentAt: new Date(),
+        trackingId,
+        mailAccount: from,
       },
       include: {
         deal: { select: { id: true, name: true } },

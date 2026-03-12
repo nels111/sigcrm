@@ -46,7 +46,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
         emails: {
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ sentAt: "desc" }, { createdAt: "desc" }],
           take: 20,
           select: {
             id: true,
@@ -54,6 +54,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             fromAddress: true,
             toAddress: true,
             subject: true,
+            bodyHtml: true,
+            bodyText: true,
             status: true,
             sentAt: true,
             receivedAt: true,

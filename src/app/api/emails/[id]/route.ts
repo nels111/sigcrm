@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { getSessionAccount } from "@/lib/auth-helpers";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -175,6 +178,50 @@ export async function PUT(
       }
     }
 
+    return NextResponse.json(
+      { error: "Failed to update email" },
+      { status: 500 }
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /api/emails/[id] — Quick update (mark read, link to CRM record)
+// ---------------------------------------------------------------------------
+
+export async function PATCH(
+  request: NextRequest,
+  context: RouteContext
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session)
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const account = await getSessionAccount();
+    const { id } = await context.params;
+    const body = await request.json();
+
+    const email = await prisma.email.findFirst({
+      where: { id, mailAccount: account },
+    });
+    if (!email) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const updated = await prisma.email.update({
+      where: { id },
+      data: {
+        ...(body.isRead !== undefined ? { isRead: body.isRead } : {}),
+        ...(body.contactId !== undefined ? { contactId: body.contactId } : {}),
+        ...(body.dealId !== undefined ? { dealId: body.dealId } : {}),
+        ...(body.leadId !== undefined ? { leadId: body.leadId } : {}),
+      },
+    });
+
+    return NextResponse.json({ data: updated });
+  } catch (error) {
+    console.error("PATCH /api/emails/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to update email" },
       { status: 500 }
