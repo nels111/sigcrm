@@ -1,5 +1,5 @@
 import { ImapFlow } from "imapflow";
-import type { FetchMessageObject, MessageStructureObject } from "imapflow";
+import { simpleParser } from "mailparser";
 import { prisma } from "@/lib/prisma";
 import { EmailDirection, EmailStatus, ActivityType } from "@prisma/client";
 
@@ -24,6 +24,7 @@ interface ParsedEmail {
   inReplyTo: string | null;
   attachments: Array<{ filename: string; contentType: string; size: number }>;
   receivedAt: Date;
+  isRead: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -46,126 +47,10 @@ function getMailboxAccounts(): MailboxAccount[] {
   }
 
   if (accounts.length === 0) {
-    throw new Error("No IMAP mailbox credentials configured. Set NICK_EMAIL/NICK_EMAIL_PASSWORD and/or NELSON_EMAIL/NELSON_EMAIL_PASSWORD.");
+    throw new Error("No IMAP mailbox credentials configured.");
   }
 
   return accounts;
-}
-
-/**
- * Walk the MIME bodyStructure tree and collect text parts and attachment
- * metadata.  Returns the part numbers we need to download.
- */
-function walkStructure(
-  node: MessageStructureObject,
-  textParts: { part: string; type: string }[],
-  attachmentMeta: { filename: string; contentType: string; size: number }[]
-): void {
-  if (node.childNodes && node.childNodes.length > 0) {
-    for (const child of node.childNodes) {
-      walkStructure(child, textParts, attachmentMeta);
-    }
-    return;
-  }
-
-  const type = (node.type || "").toLowerCase();
-  const disposition = (node.disposition || "").toLowerCase();
-  const part = node.part || "1";
-
-  if (disposition === "attachment") {
-    const filename =
-      node.dispositionParameters?.filename ||
-      node.parameters?.name ||
-      "untitled";
-    attachmentMeta.push({
-      filename,
-      contentType: type,
-      size: node.size || 0,
-    });
-    return;
-  }
-
-  if (type === "text/html" || type === "text/plain") {
-    textParts.push({ part, type });
-  }
-}
-
-/**
- * Download the body content of the given text parts and return html + text.
- */
-async function downloadTextParts(
-  client: ImapFlow,
-  uid: number,
-  textParts: { part: string; type: string }[]
-): Promise<{ html: string; text: string }> {
-  let html = "";
-  let text = "";
-
-  for (const { part, type } of textParts) {
-    try {
-      const { content } = await client.download(String(uid), part, { uid: true });
-      const chunks: Buffer[] = [];
-      for await (const chunk of content) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      const decoded = Buffer.concat(chunks).toString("utf-8");
-
-      if (type === "text/html") {
-        html = decoded;
-      } else if (type === "text/plain") {
-        text = decoded;
-      }
-    } catch {
-      // If a single part fails to download, continue with the others.
-    }
-  }
-
-  return { html, text };
-}
-
-/**
- * Parse a FetchMessageObject into our internal ParsedEmail shape.
- */
-async function parseMessage(
-  client: ImapFlow,
-  msg: FetchMessageObject
-): Promise<ParsedEmail> {
-  const envelope = msg.envelope;
-
-  const fromAddress =
-    envelope?.from?.[0]?.address || "unknown@unknown.com";
-  const toAddress =
-    envelope?.to?.[0]?.address || "unknown@unknown.com";
-  const ccAddresses = (envelope?.cc || [])
-    .map((a) => a.address)
-    .filter((a): a is string => Boolean(a));
-  const subject = envelope?.subject || "(no subject)";
-  const messageId = envelope?.messageId || "";
-  const inReplyTo = envelope?.inReplyTo || null;
-  const receivedAt = envelope?.date ? new Date(envelope.date) : new Date();
-
-  // Parse body structure for text parts + attachments
-  const textParts: { part: string; type: string }[] = [];
-  const attachmentMeta: { filename: string; contentType: string; size: number }[] = [];
-
-  if (msg.bodyStructure) {
-    walkStructure(msg.bodyStructure, textParts, attachmentMeta);
-  }
-
-  const { html, text } = await downloadTextParts(client, msg.uid, textParts);
-
-  return {
-    fromAddress,
-    toAddress,
-    ccAddresses,
-    subject,
-    bodyHtml: html,
-    bodyText: text,
-    messageId,
-    inReplyTo,
-    attachments: attachmentMeta,
-    receivedAt,
-  };
 }
 
 /**
@@ -186,7 +71,6 @@ async function matchContact(senderEmail: string) {
 
   if (!contact) return null;
 
-  // Find the most recent open deal for this contact
   const openDeal = await prisma.deal.findFirst({
     where: {
       contactId: contact.id,
@@ -213,12 +97,13 @@ async function matchContact(senderEmail: string) {
 
 /**
  * Process a single parsed inbound email: create Email record + Activity.
+ * Returns true if the email was new and inserted.
  */
 async function processInboundEmail(
   parsed: ParsedEmail,
   account: MailboxAccount
 ): Promise<boolean> {
-  // Check for duplicate by messageId to avoid re-processing
+  // Check for duplicate by messageId
   if (parsed.messageId) {
     const existing = await prisma.email.findFirst({
       where: { messageId: parsed.messageId },
@@ -228,7 +113,7 @@ async function processInboundEmail(
 
   const match = await matchContact(parsed.fromAddress);
 
-  // Try to resolve thread ID from inReplyTo
+  // Resolve thread ID from inReplyTo
   let threadId: string | null = null;
   if (parsed.inReplyTo) {
     const parent = await prisma.email.findFirst({
@@ -257,7 +142,7 @@ async function processInboundEmail(
       status: EmailStatus.received,
       receivedAt: parsed.receivedAt,
       mailAccount: account.alias,
-      isRead: false,
+      isRead: parsed.isRead,
     },
   });
 
@@ -282,7 +167,7 @@ async function processInboundEmail(
 }
 
 /**
- * Poll a single mailbox for unseen messages.
+ * Poll a single mailbox — download full raw source, parse with mailparser.
  */
 async function pollMailbox(account: MailboxAccount): Promise<number> {
   const host = process.env.IMAP_HOST || "imap.ionos.co.uk";
@@ -297,7 +182,7 @@ async function pollMailbox(account: MailboxAccount): Promise<number> {
       pass: account.password,
     },
     logger: false,
-    socketTimeout: 30000,
+    socketTimeout: 60000,
     greetingTimeout: 15000,
     emitLogs: false,
   });
@@ -310,12 +195,11 @@ async function pollMailbox(account: MailboxAccount): Promise<number> {
     const lock = await client.getMailboxLock("INBOX");
 
     try {
-      // Get mailbox status to determine range
       const status = await client.status("INBOX", { messages: true });
       const totalMessages = status.messages ?? 0;
       if (totalMessages === 0) return 0;
 
-      // Fetch the last 200 messages (all, not just unseen)
+      // Fetch the last 200 messages
       const fetchLimit = 200;
       const startSeq = Math.max(1, totalMessages - fetchLimit + 1);
 
@@ -324,13 +208,67 @@ async function pollMailbox(account: MailboxAccount): Promise<number> {
         {
           uid: true,
           envelope: true,
-          bodyStructure: true,
           flags: true,
+          source: true,
         }
       )) {
         try {
-          const parsed = await parseMessage(client, msg);
-          const wasNew = await processInboundEmail(parsed, account);
+          // Quick duplicate check before expensive parsing
+          const msgId = msg.envelope?.messageId;
+          if (msgId) {
+            const exists = await prisma.email.findFirst({
+              where: { messageId: msgId },
+              select: { id: true },
+            });
+            if (exists) continue;
+          }
+
+          // Parse full raw source with mailparser
+          const raw = msg.source;
+          if (!raw) continue;
+
+          const parsed = await simpleParser(raw);
+
+          const fromAddr =
+            parsed.from?.value?.[0]?.address || "unknown@unknown.com";
+          const toAddr =
+            parsed.to
+              ? Array.isArray(parsed.to)
+                ? parsed.to[0]?.value?.[0]?.address || ""
+                : parsed.to.value?.[0]?.address || ""
+              : "";
+          const ccAddrs = parsed.cc
+            ? (Array.isArray(parsed.cc)
+                ? parsed.cc.flatMap((c) => c.value)
+                : parsed.cc.value
+              )
+                .map((a) => a.address)
+                .filter((a): a is string => Boolean(a))
+            : [];
+
+          const attachmentMeta = (parsed.attachments || []).map((att) => ({
+            filename: att.filename || "untitled",
+            contentType: att.contentType || "application/octet-stream",
+            size: att.size || 0,
+          }));
+
+          const isRead = msg.flags?.has("\\Seen") ?? false;
+
+          const emailData: ParsedEmail = {
+            fromAddress: fromAddr,
+            toAddress: toAddr,
+            ccAddresses: ccAddrs,
+            subject: parsed.subject || "(no subject)",
+            bodyHtml: parsed.html || "",
+            bodyText: parsed.text || "",
+            messageId: parsed.messageId || "",
+            inReplyTo: parsed.inReplyTo || null,
+            attachments: attachmentMeta,
+            receivedAt: parsed.date || new Date(),
+            isRead,
+          };
+
+          const wasNew = await processInboundEmail(emailData, account);
           if (wasNew) processed++;
         } catch (msgError) {
           console.error(
@@ -362,18 +300,6 @@ async function pollMailbox(account: MailboxAccount): Promise<number> {
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * Poll all configured IONOS mailboxes for new (unseen) emails.
- *
- * For each new email the poller will:
- *  1. Parse envelope, body (html + text), and attachment metadata.
- *  2. Match the sender against the contacts table.
- *  3. Create an Email record linked to contact / account / deal when matched.
- *  4. Create an Activity record (email_received).
- *  5. Mark the message as Seen in IMAP.
- *
- * Returns the total number of emails processed across all mailboxes.
- */
 export async function pollEmails(): Promise<number> {
   const accounts = getMailboxAccounts();
   let total = 0;
