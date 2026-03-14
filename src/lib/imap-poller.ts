@@ -199,9 +199,8 @@ async function pollMailbox(account: MailboxAccount): Promise<number> {
       const totalMessages = status.messages ?? 0;
       if (totalMessages === 0) return 0;
 
-      // Fetch the last 200 messages
-      const fetchLimit = 200;
-      const startSeq = Math.max(1, totalMessages - fetchLimit + 1);
+      // Fetch all messages in the inbox
+      const startSeq = 1;
 
       for await (const msg of client.fetch(
         `${startSeq}:*`,
