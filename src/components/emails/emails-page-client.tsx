@@ -4,14 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Search,
   RefreshCw,
   PenSquare,
+  ArrowLeft,
   Reply,
   Eye,
   Link2,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ComposeDialog } from "./compose-dialog";
@@ -52,9 +53,36 @@ interface EmailItem {
   account: { id: string; name: string } | null;
 }
 
+interface DateGroup {
+  label: string;
+  emails: EmailItem[];
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function getEmailDate(email: EmailItem): Date {
+  return new Date(email.sentAt || email.receivedAt || email.createdAt);
+}
+
+function formatTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatFullDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 function relativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -71,310 +99,242 @@ function relativeTime(dateStr: string): string {
   });
 }
 
-function formatFullDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString("en-GB", {
+function displayName(email: EmailItem): string {
+  if (email.direction === "inbound") {
+    if (email.contact) {
+      const parts = [email.contact.firstName, email.contact.lastName].filter(Boolean);
+      if (parts.length) return parts.join(" ");
+    }
+    // Use the part before @ but capitalize first letter
+    const local = email.fromAddress.split("@")[0];
+    return local.charAt(0).toUpperCase() + local.slice(1);
+  }
+  // Outbound — show recipient
+  if (email.contact) {
+    const parts = [email.contact.firstName, email.contact.lastName].filter(Boolean);
+    if (parts.length) return parts.join(" ");
+  }
+  const local = email.toAddress.split("@")[0];
+  return local.charAt(0).toUpperCase() + local.slice(1);
+}
+
+function bodyPreview(email: EmailItem): string {
+  const text = email.bodyText || "";
+  if (text) return text.replace(/\s+/g, " ").trim().slice(0, 120);
+  if (email.bodyHtml) {
+    // Strip HTML tags for preview
+    return email.bodyHtml
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120);
+  }
+  return "";
+}
+
+function dateLabel(date: Date): string {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const weekAgo = new Date(today.getTime() - 7 * 86400000);
+  const emailDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  if (emailDay.getTime() === today.getTime()) return "Today";
+  if (emailDay.getTime() === yesterday.getTime()) return "Yesterday";
+  if (emailDay >= weekAgo) {
+    return date.toLocaleDateString("en-GB", { weekday: "long" });
+  }
+  return date.toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   });
 }
 
-function senderName(email: EmailItem): string {
-  if (email.direction === "inbound") {
-    return email.fromAddress.split("@")[0];
+function groupByDate(emails: EmailItem[]): DateGroup[] {
+  const groups: Map<string, EmailItem[]> = new Map();
+  for (const email of emails) {
+    const d = getEmailDate(email);
+    const label = dateLabel(d);
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label)!.push(email);
   }
-  return email.toAddress.split("@")[0];
+  return Array.from(groups.entries()).map(([label, emails]) => ({
+    label,
+    emails,
+  }));
+}
+
+function timeDisplay(email: EmailItem): string {
+  const dateStr = email.sentAt || email.receivedAt || email.createdAt;
+  const d = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const emailDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  if (emailDay.getTime() === today.getTime()) {
+    return formatTime(dateStr);
+  }
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
 // ---------------------------------------------------------------------------
-// EmailSidebar
+// EmailDetailView — iOS-style full detail
 // ---------------------------------------------------------------------------
 
-function EmailSidebar({
-  emails,
-  loading,
-  direction,
-  setDirection,
-  selectedId,
-  onSelect,
-  onSync,
-  syncing,
-  search,
-  setSearch,
-}: {
-  emails: EmailItem[];
-  loading: boolean;
-  direction: "inbound" | "outbound";
-  setDirection: (d: "inbound" | "outbound") => void;
-  selectedId: string | null;
-  onSelect: (email: EmailItem) => void;
-  onSync: () => void;
-  syncing: boolean;
-  search: string;
-  setSearch: (s: string) => void;
-}) {
-  return (
-    <div className="flex flex-col h-full border-r">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setDirection("inbound")}
-            className={cn(
-              "px-3 py-1.5 text-xs font-medium rounded-full transition-colors",
-              direction === "inbound"
-                ? "bg-[#0B3D91] text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            )}
-          >
-            Inbox
-          </button>
-          <button
-            onClick={() => setDirection("outbound")}
-            className={cn(
-              "px-3 py-1.5 text-xs font-medium rounded-full transition-colors",
-              direction === "outbound"
-                ? "bg-[#0B3D91] text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            )}
-          >
-            Sent
-          </button>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 w-8 p-0"
-          onClick={onSync}
-          disabled={syncing}
-        >
-          <RefreshCw
-            className={cn("h-4 w-4", syncing && "animate-spin")}
-          />
-        </Button>
-      </div>
-
-      {/* Search */}
-      <div className="px-3 py-2 border-b">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-8 text-sm"
-          />
-        </div>
-      </div>
-
-      {/* List */}
-      <ScrollArea className="flex-1">
-        {loading ? (
-          <div className="space-y-3 p-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="space-y-2 animate-pulse">
-                <div className="h-3 bg-gray-200 rounded w-3/4" />
-                <div className="h-2.5 bg-gray-100 rounded w-full" />
-                <div className="h-2 bg-gray-100 rounded w-1/3" />
-              </div>
-            ))}
-          </div>
-        ) : emails.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-            No emails found
-          </div>
-        ) : (
-          <div className="divide-y">
-            {emails.map((email) => {
-              const isSelected = selectedId === email.id;
-              const isUnread = !email.isRead && email.direction === "inbound";
-              return (
-                <button
-                  key={email.id}
-                  onClick={() => onSelect(email)}
-                  className={cn(
-                    "w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors",
-                    isSelected && "bg-blue-50"
-                  )}
-                >
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span
-                      className={cn(
-                        "text-sm truncate pr-2",
-                        isUnread ? "font-semibold" : "font-normal"
-                      )}
-                    >
-                      {senderName(email)}
-                    </span>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-[11px] text-gray-400">
-                        {relativeTime(email.sentAt || email.createdAt)}
-                      </span>
-                      {isUnread && (
-                        <div className="h-2 w-2 rounded-full bg-[#0B3D91]" />
-                      )}
-                    </div>
-                  </div>
-                  <p className="text-sm text-gray-500 truncate">
-                    {email.subject || "(no subject)"}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </ScrollArea>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// EmailDetail
-// ---------------------------------------------------------------------------
-
-function EmailDetail({
+function EmailDetailView({
   email,
+  onBack,
   onReply,
 }: {
-  email: EmailItem | null;
+  email: EmailItem;
+  onBack: () => void;
   onReply: (email: EmailItem) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Auto-resize iframe to content
   useEffect(() => {
-    if (!email?.bodyHtml || !iframeRef.current) return;
+    if (!email.bodyHtml || !iframeRef.current) return;
     const iframe = iframeRef.current;
     const doc = iframe.contentDocument;
     if (!doc) return;
     doc.open();
     doc.write(`
       <html>
-        <head><style>body{font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#333;margin:0;padding:8px;}</style></head>
+        <head>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              font-size: 15px;
+              line-height: 1.5;
+              color: #1d1d1f;
+              margin: 0;
+              padding: 0;
+              -webkit-font-smoothing: antialiased;
+            }
+            a { color: #007AFF; }
+            img { max-width: 100%; height: auto; }
+          </style>
+        </head>
         <body>${email.bodyHtml}</body>
       </html>
     `);
     doc.close();
     const resize = () => {
-      iframe.style.height =
-        (doc.body?.scrollHeight || 200) + "px";
+      iframe.style.height = (doc.body?.scrollHeight || 300) + "px";
     };
     resize();
-    setTimeout(resize, 100);
-  }, [email?.bodyHtml]);
-
-  if (!email) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        <p className="text-sm">Select an email</p>
-      </div>
-    );
-  }
+    setTimeout(resize, 200);
+  }, [email.bodyHtml]);
 
   const linked = email.deal
     ? { label: email.deal.name, href: `/deals/${email.deal.id}`, type: "Deal" }
     : email.lead
-      ? {
-          label: email.lead.companyName,
-          href: `/leads/${email.lead.id}`,
-          type: "Lead",
-        }
+      ? { label: email.lead.companyName, href: `/leads/${email.lead.id}`, type: "Lead" }
       : email.account
-        ? {
-            label: email.account.name,
-            href: `/accounts/${email.account.id}`,
-            type: "Account",
-          }
+        ? { label: email.account.name, href: `/accounts/${email.account.id}`, type: "Account" }
         : null;
 
   const trackingInfo =
     email.direction === "outbound" && email.openCount != null
       ? email.openCount > 0
-        ? `Opened ${email.openCount} time${email.openCount > 1 ? "s" : ""}${email.lastOpenedAt ? ` \u00B7 last seen ${relativeTime(email.lastOpenedAt)}` : ""}`
+        ? `Opened ${email.openCount} time${email.openCount > 1 ? "s" : ""}${email.lastOpenedAt ? ` \u00B7 last ${relativeTime(email.lastOpenedAt)}` : ""}`
         : "Not yet opened"
       : null;
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-6 py-4 space-y-1 text-sm">
-        <div>
-          <span className="text-muted-foreground w-16 inline-block">From:</span>
-          <span className="font-medium">{email.fromAddress}</span>
-        </div>
-        <div>
-          <span className="text-muted-foreground w-16 inline-block">To:</span>
-          <span>{email.toAddress}</span>
-        </div>
-        <div>
-          <span className="text-muted-foreground w-16 inline-block">Subject:</span>
-          <span className="font-medium">{email.subject || "(no subject)"}</span>
-        </div>
-        <div>
-          <span className="text-muted-foreground w-16 inline-block">Date:</span>
-          <span>{formatFullDate(email.sentAt || email.createdAt)}</span>
-        </div>
+      {/* Nav bar */}
+      <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50/80">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1 text-[#007AFF] text-sm font-medium hover:opacity-70 transition-opacity"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-[#007AFF] hover:text-[#007AFF]/70 gap-1.5"
+          onClick={() => onReply(email)}
+        >
+          <Reply className="h-4 w-4" />
+          Reply
+        </Button>
       </div>
 
-      <hr />
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-5 py-4">
+          {/* Subject */}
+          <h2 className="text-xl font-semibold text-gray-900 leading-tight">
+            {email.subject || "(no subject)"}
+          </h2>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        {email.bodyHtml ? (
-          <iframe
-            ref={iframeRef}
-            title="Email body"
-            className="w-full border-0"
-            sandbox="allow-same-origin"
-            style={{ minHeight: 200 }}
-          />
-        ) : (
-          <pre className="text-sm whitespace-pre-wrap font-sans">
-            {email.bodyText || "No content"}
-          </pre>
-        )}
-      </div>
+          {/* Meta */}
+          <div className="mt-4 flex items-start gap-3">
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center text-white text-sm font-semibold shrink-0">
+              {displayName(email).charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-sm font-semibold text-gray-900">{displayName(email)}</p>
+                <span className="text-xs text-gray-400 whitespace-nowrap">
+                  {formatFullDate(email.sentAt || email.createdAt)}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {email.direction === "inbound" ? "From" : "To"}:{" "}
+                {email.direction === "inbound" ? email.fromAddress : email.toAddress}
+              </p>
+              {email.direction === "outbound" && (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  From: {email.fromAddress}
+                </p>
+              )}
+            </div>
+          </div>
 
-      <hr />
-
-      {/* CRM + Tracking + Actions */}
-      <div className="px-6 py-3 space-y-2">
-        {/* CRM link */}
-        <div className="flex items-center gap-2 text-sm">
-          {linked ? (
+          {/* CRM link */}
+          {linked && (
             <Link
               href={linked.href}
-              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+              className="mt-3 inline-flex items-center gap-1.5 text-xs text-[#007AFF] bg-blue-50 px-2.5 py-1 rounded-full hover:bg-blue-100 transition-colors"
             >
               <Link2 className="h-3 w-3" />
               {linked.label} &middot; {linked.type}
             </Link>
-          ) : (
-            <span className="text-xs text-gray-400">Not linked to a CRM record</span>
           )}
-        </div>
 
-        {/* Tracking */}
-        {trackingInfo && (
-          <div className="flex items-center gap-1.5 text-xs text-gray-400">
-            <Eye className="h-3 w-3" />
-            {trackingInfo}
+          {/* Tracking */}
+          {trackingInfo && (
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-400">
+              <Eye className="h-3 w-3" />
+              {trackingInfo}
+            </div>
+          )}
+
+          {/* Body */}
+          <div className="mt-5">
+            {email.bodyHtml ? (
+              <iframe
+                ref={iframeRef}
+                title="Email body"
+                className="w-full border-0"
+                sandbox="allow-same-origin"
+                style={{ minHeight: 200 }}
+              />
+            ) : (
+              <p className="text-[15px] text-gray-700 whitespace-pre-wrap leading-relaxed">
+                {email.bodyText || "No content"}
+              </p>
+            )}
           </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center gap-2 pt-1">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => onReply(email)}
-          >
-            <Reply className="h-3.5 w-3.5" />
-            Reply
-          </Button>
         </div>
       </div>
     </div>
@@ -382,7 +342,7 @@ function EmailDetail({
 }
 
 // ---------------------------------------------------------------------------
-// Main Component
+// Main Component — iOS Mail style
 // ---------------------------------------------------------------------------
 
 export function EmailsPageClient() {
@@ -460,47 +420,189 @@ export function EmailsPageClient() {
     setComposeOpen(true);
   }
 
-  function handleSelect(email: EmailItem) {
-    setSelectedEmail(email);
+  const dateGroups = groupByDate(emails);
+
+  // If an email is selected, show detail view
+  if (selectedEmail) {
+    return (
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden" style={{ minHeight: 600 }}>
+        <EmailDetailView
+          email={selectedEmail}
+          onBack={() => setSelectedEmail(null)}
+          onReply={handleReply}
+        />
+        <ComposeDialog
+          open={composeOpen}
+          onOpenChange={setComposeOpen}
+          onSuccess={fetchEmails}
+          defaultTo={replyTo?.fromAddress || defaultTo}
+          defaultSubject={replyTo?.subject || ""}
+          inReplyTo={replyTo?.messageId || undefined}
+          dealId={replyTo?.deal?.id || defaultDealId || undefined}
+          leadId={replyTo?.lead?.id || defaultLeadId || undefined}
+        />
+      </div>
+    );
   }
 
+  // List view
   return (
     <div className="space-y-4">
-      {/* Page header */}
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Emails</h2>
-          <p className="text-sm text-muted-foreground">
-            View and manage all emails
-          </p>
+        <h2 className="text-2xl font-bold tracking-tight">Emails</h2>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 w-9 p-0"
+            onClick={handleSync}
+            disabled={syncing}
+          >
+            <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
+          </Button>
+          <Button
+            onClick={() => {
+              setReplyTo(null);
+              setComposeOpen(true);
+            }}
+            size="sm"
+            className="gap-1.5 bg-[#007AFF] hover:bg-[#0066DD]"
+          >
+            <PenSquare className="h-3.5 w-3.5" />
+            Compose
+          </Button>
         </div>
-        <Button
-          onClick={() => {
-            setReplyTo(null);
-            setComposeOpen(true);
-          }}
-          className="gap-2"
-        >
-          <PenSquare className="h-4 w-4" />
-          Compose
-        </Button>
       </div>
 
-      {/* Two-panel layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] border rounded-lg bg-card min-h-[600px] overflow-hidden">
-        <EmailSidebar
-          emails={emails}
-          loading={loading}
-          direction={direction}
-          setDirection={setDirection}
-          selectedId={selectedEmail?.id ?? null}
-          onSelect={handleSelect}
-          onSync={handleSync}
-          syncing={syncing}
-          search={search}
-          setSearch={setSearch}
+      {/* Segmented control — iOS style */}
+      <div className="flex justify-center">
+        <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
+          <button
+            onClick={() => setDirection("inbound")}
+            className={cn(
+              "px-6 py-1.5 text-sm font-medium rounded-md transition-all",
+              direction === "inbound"
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+            )}
+          >
+            Inbox
+          </button>
+          <button
+            onClick={() => setDirection("outbound")}
+            className={cn(
+              "px-6 py-1.5 text-sm font-medium rounded-md transition-all",
+              direction === "outbound"
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+            )}
+          >
+            Sent
+          </button>
+        </div>
+      </div>
+
+      {/* Search bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Input
+          placeholder="Search emails..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-10 h-10 bg-gray-100 border-0 rounded-xl text-sm placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-[#007AFF]"
         />
-        <EmailDetail email={selectedEmail} onReply={handleReply} />
+      </div>
+
+      {/* Email list */}
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="p-4 space-y-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex gap-3 animate-pulse">
+                <div className="h-10 w-10 rounded-full bg-gray-100 shrink-0" />
+                <div className="flex-1 space-y-2 pt-1">
+                  <div className="h-3.5 bg-gray-100 rounded w-1/3" />
+                  <div className="h-3 bg-gray-50 rounded w-2/3" />
+                  <div className="h-2.5 bg-gray-50 rounded w-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : emails.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+            <p className="text-sm">No emails</p>
+          </div>
+        ) : (
+          <div>
+            {dateGroups.map((group) => (
+              <div key={group.label}>
+                {/* Date section header */}
+                <div className="px-4 py-2 bg-gray-50/80 border-b">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    {group.label}
+                  </p>
+                </div>
+                {/* Emails in this group */}
+                <div>
+                  {group.emails.map((email, idx) => {
+                    const isUnread = !email.isRead && email.direction === "inbound";
+                    const preview = bodyPreview(email);
+                    return (
+                      <button
+                        key={email.id}
+                        onClick={() => setSelectedEmail(email)}
+                        className={cn(
+                          "w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors",
+                          idx < group.emails.length - 1 && "border-b border-gray-100"
+                        )}
+                      >
+                        {/* Unread dot */}
+                        <div className="flex items-center pt-3 w-2.5 shrink-0">
+                          {isUnread && (
+                            <div className="h-2.5 w-2.5 rounded-full bg-[#007AFF]" />
+                          )}
+                        </div>
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <p
+                              className={cn(
+                                "text-[15px] truncate",
+                                isUnread ? "font-semibold text-gray-900" : "font-normal text-gray-900"
+                              )}
+                            >
+                              {displayName(email)}
+                            </p>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="text-xs text-gray-400">
+                                {timeDisplay(email)}
+                              </span>
+                              <ChevronRight className="h-3.5 w-3.5 text-gray-300" />
+                            </div>
+                          </div>
+                          <p
+                            className={cn(
+                              "text-sm truncate mt-0.5",
+                              isUnread ? "font-medium text-gray-700" : "text-gray-600"
+                            )}
+                          >
+                            {email.subject || "(no subject)"}
+                          </p>
+                          {preview && (
+                            <p className="text-sm text-gray-400 truncate mt-0.5">
+                              {preview}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Compose Dialog */}
