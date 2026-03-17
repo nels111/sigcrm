@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateQuotePDF } from "@/lib/quote-docx";
+import { generateQuotePDF } from "@/lib/quote-pdf";
 import { sendEmail } from "@/lib/email";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -174,10 +174,11 @@ export async function POST(
     });
 
     // Create Email record
+    const nickEmail = process.env.NICK_EMAIL || "nick@signature-cleans.co.uk";
     await prisma.email.create({
       data: {
         direction: "outbound",
-        fromAddress: "nick@signature-cleans.co.uk",
+        fromAddress: nickEmail,
         toAddress: quote.contactEmail,
         subject,
         bodyHtml: "Quote PDF attached",

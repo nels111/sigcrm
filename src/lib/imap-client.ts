@@ -1,15 +1,23 @@
 import { ImapFlow } from "imapflow";
 
-function getCredentials(account: "nick" | "nelson") {
+function getCredentials(account: "nick" | "nelson" | "hello") {
+  if (account === "nick") {
+    return {
+      user: process.env.NICK_EMAIL!,
+      pass: process.env.NICK_EMAIL_PASSWORD!,
+    };
+  }
+
+  if (account === "nelson") {
+    return {
+      user: process.env.NELSON_EMAIL!,
+      pass: process.env.NELSON_EMAIL_PASSWORD!,
+    };
+  }
+
   return {
-    user:
-      account === "nick"
-        ? process.env.NICK_EMAIL!
-        : process.env.NELSON_EMAIL!,
-    pass:
-      account === "nick"
-        ? process.env.NICK_EMAIL_PASSWORD!
-        : process.env.NELSON_EMAIL_PASSWORD!,
+    user: process.env.HELLO_EMAIL!,
+    pass: process.env.HELLO_EMAIL_PASSWORD!,
   };
 }
 
@@ -25,7 +33,7 @@ export interface ImapEmail {
 }
 
 export async function fetchEmails(
-  account: "nick" | "nelson",
+  account: "nick" | "nelson" | "hello",
   limit = 50
 ): Promise<ImapEmail[]> {
   const creds = getCredentials(account);
@@ -73,7 +81,7 @@ export async function fetchEmails(
 }
 
 export async function markAsRead(
-  account: "nick" | "nelson",
+  account: "nick" | "nelson" | "hello",
   uid: string
 ): Promise<void> {
   const creds = getCredentials(account);

@@ -6,6 +6,7 @@ import {
   View,
   StyleSheet,
 } from "@react-pdf/renderer";
+import { renderToBuffer } from "@react-pdf/renderer";
 
 // ──────────────────────────────────────────────
 // TYPES
@@ -672,4 +673,41 @@ export function QuotePDF({ data }: { data: QuotePDFData }) {
       <DeclarationSection data={data} />
     </Document>
   );
+}
+
+/**
+ * Generate a PDF buffer for a quote using @react-pdf/renderer.
+ * This replaces the deprecated quote-docx.ts implementation that relied on LibreOffice.
+ *
+ * eslint-disable-next-line @typescript-eslint/no-explicit-any
+ */
+export async function generateQuotePDF(quote: any): Promise<Buffer> {
+  // Build the data object from the quote
+  const data: QuotePDFData = {
+    quoteRef: quote.quoteRef,
+    companyName: quote.companyName,
+    address: quote.address,
+    contactName: quote.contactName,
+    contactEmail: quote.contactEmail,
+    contactPhone: quote.contactPhone ?? null,
+    siteType: quote.siteType,
+    daysSelected: quote.daysSelected ?? [],
+    monthlyTotal: Number(quote.monthlyTotal),
+    annualTotal: Number(quote.annualTotal ?? 0),
+    scopeOfWorks: Array.isArray(quote.scopeOfWorks)
+      ? quote.scopeOfWorks.join("\n")
+      : (quote.scopeOfWorks ?? ""),
+    applyPilotPricing: quote.applyPilotPricing === true,
+    pilotMonthlyTotal: quote.pilotMonthlyTotal ? Number(quote.pilotMonthlyTotal) : null,
+    pilotSavings: quote.pilotSavings ? Number(quote.pilotSavings) : null,
+    pilotStartDate: quote.pilotStartDate?.toISOString() ?? null,
+    pilotEndDate: quote.pilotEndDate?.toISOString() ?? null,
+    pilotReviewDate: quote.pilotReviewDate?.toISOString() ?? null,
+    standardPricingStartDate: quote.standardPricingStartDate?.toISOString() ?? null,
+    createdAt: quote.createdAt?.toISOString() ?? new Date().toISOString(),
+  };
+
+  const pdfElement = React.createElement(QuotePDF, { data });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return renderToBuffer(pdfElement as unknown as React.ReactElement<any>);
 }

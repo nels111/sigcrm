@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { getSessionAccount } from "@/lib/auth-helpers";
+import { getAccessibleMailAccounts } from "@/lib/auth-helpers";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -198,12 +198,17 @@ export async function PATCH(
     if (!session)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const account = await getSessionAccount();
+    const accessibleAccounts = await getAccessibleMailAccounts();
     const { id } = await context.params;
     const body = await request.json();
 
     const email = await prisma.email.findFirst({
-      where: { id, mailAccount: account },
+      where: {
+        id,
+        mailAccount: {
+          in: accessibleAccounts,
+        },
+      },
     });
     if (!email) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

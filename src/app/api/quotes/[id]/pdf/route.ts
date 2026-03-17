@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateQuotePDF } from "@/lib/quote-docx";
+import { generateQuotePDF } from "@/lib/quote-pdf";
 
 type RouteContext = { params: Promise<{ id: string }> };
 

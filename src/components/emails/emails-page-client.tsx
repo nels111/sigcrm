@@ -42,6 +42,7 @@ interface EmailItem {
   openCount?: number;
   openedAt?: string | null;
   lastOpenedAt?: string | null;
+  mailAccount?: "nick" | "nelson" | "hello";
   deal: { id: string; name: string } | null;
   lead: { id: string; companyName: string; contactName: string } | null;
   contact: {
@@ -362,36 +363,94 @@ export function EmailsPageClient() {
   const [composeOpen, setComposeOpen] = useState(composeParam === "true");
   const [replyTo, setReplyTo] = useState<EmailItem | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [mailboxes, setMailboxes] = useState<("nick" | "nelson" | "hello")[]>([]);
+  const [selectedMailbox, setSelectedMailbox] = useState<"nick" | "nelson" | "hello" | "all">("all");
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [autoPolling, setAutoPolling] = useState(true);
+
+  // Load accessible mailboxes
+  useEffect(() => {
+    async function loadMailboxes() {
+      try {
+        const res = await fetch("/api/emails/mailboxes");
+        if (res.ok) {
+          const json = await res.json();
+          setMailboxes(json.mailboxes || []);
+        }
+      } catch {
+        // Fallback
+        setMailboxes(["nick", "hello"]);
+      }
+    }
+    loadMailboxes();
+  }, []);
 
   // Debounce search
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
     return () => clearTimeout(timer);
   }, [search]);
 
-  const fetchEmails = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: "1",
-        limit: "100",
-        direction,
-      });
-      if (debouncedSearch) params.set("search", debouncedSearch);
-      const res = await fetch(`/api/emails?${params}`);
-      if (!res.ok) throw new Error();
-      const json = await res.json();
-      setEmails(json.data || []);
-    } catch {
-      setEmails([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [direction, debouncedSearch]);
+  const fetchEmails = useCallback(
+    async (pageNum: number = 1, append: boolean = false) => {
+      if (pageNum === 1) setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: String(pageNum),
+          limit: "50",
+          direction,
+        });
+        if (debouncedSearch) params.set("search", debouncedSearch);
+        if (selectedMailbox !== "all") {
+          params.set("mailAccount", selectedMailbox);
+        }
+        const res = await fetch(`/api/emails?${params}`);
+        if (!res.ok) throw new Error();
+        const json = await res.json();
+        const newEmails = json.data || [];
+        setHasMore(
+          json.pagination && json.pagination.page < json.pagination.totalPages
+        );
+        if (append) {
+          setEmails((prev) => [...prev, ...newEmails]);
+        } else {
+          setEmails(newEmails);
+        }
+      } catch {
+        setEmails([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [direction, debouncedSearch, selectedMailbox]
+  );
 
   useEffect(() => {
-    fetchEmails();
-  }, [fetchEmails]);
+    setPage(1);
+    fetchEmails(1, false);
+  }, [direction, debouncedSearch, selectedMailbox, fetchEmails]);
+
+  // Auto-poll every 60 seconds
+  useEffect(() => {
+    if (!autoPolling) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/emails/sync", { method: "POST" });
+        if (res.ok) {
+          // Refresh emails silently
+          fetchEmails(1, false);
+        }
+      } catch {
+        // Silent fail on polling
+      }
+    }, 60000); // 60 seconds
+
+    return () => clearInterval(interval);
+  }, [autoPolling, fetchEmails]);
 
   async function handleSync() {
     setSyncing(true);
@@ -403,7 +462,7 @@ export function EmailsPageClient() {
         title: "Sync complete",
         description: `${json.synced} new email${json.synced !== 1 ? "s" : ""} imported`,
       });
-      fetchEmails();
+      fetchEmails(1, false);
     } catch {
       toast({
         title: "Sync failed",
@@ -413,6 +472,12 @@ export function EmailsPageClient() {
     } finally {
       setSyncing(false);
     }
+  }
+
+  function handleLoadMore() {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchEmails(nextPage, true);
   }
 
   function handleReply(email: EmailItem) {
@@ -475,11 +540,51 @@ export function EmailsPageClient() {
         </div>
       </div>
 
+      {/* Mailbox tabs */}
+      {mailboxes.length > 0 && (
+        <div className="flex gap-2 border-b overflow-x-auto pb-0">
+          <button
+            onClick={() => {
+              setSelectedMailbox("all");
+              setPage(1);
+            }}
+            className={cn(
+              "px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors border-b-2",
+              selectedMailbox === "all"
+                ? "border-[#007AFF] text-[#007AFF]"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            )}
+          >
+            All Mailboxes
+          </button>
+          {mailboxes.map((mb) => (
+            <button
+              key={mb}
+              onClick={() => {
+                setSelectedMailbox(mb);
+                setPage(1);
+              }}
+              className={cn(
+                "px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors border-b-2 capitalize",
+                selectedMailbox === mb
+                  ? "border-[#007AFF] text-[#007AFF]"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              )}
+            >
+              {mb}@
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Segmented control — iOS style */}
       <div className="flex justify-center">
         <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
           <button
-            onClick={() => setDirection("inbound")}
+            onClick={() => {
+              setDirection("inbound");
+              setPage(1);
+            }}
             className={cn(
               "px-6 py-1.5 text-sm font-medium rounded-md transition-all",
               direction === "inbound"
@@ -490,7 +595,10 @@ export function EmailsPageClient() {
             Inbox
           </button>
           <button
-            onClick={() => setDirection("outbound")}
+            onClick={() => {
+              setDirection("outbound");
+              setPage(1);
+            }}
             className={cn(
               "px-6 py-1.5 text-sm font-medium rounded-md transition-all",
               direction === "outbound"
@@ -516,7 +624,7 @@ export function EmailsPageClient() {
 
       {/* Email list */}
       <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        {loading ? (
+        {loading && page === 1 ? (
           <div className="p-4 space-y-4">
             {[1, 2, 3, 4, 5].map((i) => (
               <div key={i} className="flex gap-3 animate-pulse">
@@ -594,6 +702,11 @@ export function EmailsPageClient() {
                               {preview}
                             </p>
                           )}
+                          {email.mailAccount && (
+                            <p className="text-xs text-gray-400 mt-0.5 capitalize">
+                              {email.mailAccount}@
+                            </p>
+                          )}
                         </div>
                       </button>
                     );
@@ -601,6 +714,20 @@ export function EmailsPageClient() {
                 </div>
               </div>
             ))}
+
+            {/* Load more button */}
+            {hasMore && (
+              <div className="px-4 py-4 border-t flex justify-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLoadMore}
+                  disabled={loading}
+                >
+                  {loading ? "Loading..." : "Load more"}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

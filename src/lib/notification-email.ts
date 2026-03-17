@@ -24,7 +24,7 @@ export async function sendNotificationEmail(
 
     if (!user || !user.notificationsEmail) return;
 
-    const appUrl = process.env.NEXTAUTH_URL || "https://crm.signaturecleans.co.uk";
+    const appUrl = process.env.NEXTAUTH_URL || "https://crm.signature-cleans.co.uk";
     const fullLink = linkUrl ? `${appUrl}${linkUrl}` : appUrl;
 
     const html = `

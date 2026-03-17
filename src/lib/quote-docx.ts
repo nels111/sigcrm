@@ -1,3 +1,16 @@
+/**
+ * DEPRECATED: This module is no longer used.
+ *
+ * LibreOffice is not installed on the VPS, and this implementation relies on
+ * executing a system command which is brittle and environment-dependent.
+ *
+ * Instead, use the @react-pdf/renderer implementation in quote-pdf.tsx which is
+ * self-contained and doesn't require external dependencies.
+ *
+ * All routes have been migrated to use quote-pdf.tsx instead.
+ * This file is kept for reference only and should not be imported anywhere.
+ */
+
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import fs from "fs";
@@ -7,6 +20,10 @@ import os from "os";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function generateQuotePDF(quote: any): Promise<Buffer> {
+  throw new Error(
+    "generateQuotePDF from quote-docx.ts is deprecated. Use quote-pdf.tsx instead. " +
+    "LibreOffice is not available on the production VPS."
+  );
   const isPilot =
     quote.applyPilotPricing === true && quote.pilotMonthlyTotal != null;
 

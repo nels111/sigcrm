@@ -58,33 +58,52 @@ export function ComposeDialog({
 
   const [from, setFrom] = useState("nick");
   const [to, setTo] = useState(defaultTo);
+  const [cc, setCc] = useState("");
+  const [bcc, setBcc] = useState("");
   const [subject, setSubject] = useState(defaultSubject);
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [fromOptions, setFromOptions] = useState<("nick" | "nelson" | "hello")[]>(["nick"]);
 
   useEffect(() => {
     if (open) {
       setTo(defaultTo);
+      setCc("");
+      setBcc("");
       setSubject(defaultSubject ? (inReplyTo ? `Re: ${defaultSubject}` : defaultSubject) : "");
       setBody("");
       setFrom("nick");
 
-      // Fetch templates
-      fetch("/api/email-templates?limit=50")
-        .then((res) => res.json())
-        .then((json) => {
-          setTemplates(json.data || []);
+      // Load from options and templates
+      Promise.all([
+        fetch("/api/emails/mailboxes").then((res) =>
+          res.ok ? res.json() : { mailboxes: ["nick", "hello"] }
+        ),
+        fetch("/api/email-templates?limit=50").then((res) =>
+          res.ok ? res.json() : { data: [] }
+        ),
+      ])
+        .then(([mailboxesData, templatesData]) => {
+          setFromOptions(mailboxesData.mailboxes || ["nick", "hello"]);
+          setTemplates(templatesData.data || []);
         })
-        .catch(() => {});
+        .catch(() => {
+          setFromOptions(["nick", "hello"]);
+        });
     }
   }, [open, defaultTo, defaultSubject, inReplyTo]);
 
   function handleTemplateSelect(templateId: string) {
     const template = templates.find((t) => t.id === templateId);
     if (template) {
+      // Replace merge fields
+      let bodyText = template.bodyHtml.replace(/<[^>]*>/g, ""); // Strip HTML
+      bodyText = bodyText.replace(/{{contact_name}}/g, "");
+      bodyText = bodyText.replace(/{{company_name}}/g, "");
+      bodyText = bodyText.replace(/{{calendly_link}}/g, "");
       setSubject(template.subject);
-      setBody(template.bodyHtml.replace(/<[^>]*>/g, "")); // Strip HTML for textarea
+      setBody(bodyText);
     }
   }
 
@@ -106,6 +125,8 @@ export function ComposeDialog({
         body: JSON.stringify({
           from,
           to: to.trim(),
+          cc: cc.trim() || undefined,
+          bcc: bcc.trim() || undefined,
           subject: subject.trim(),
           bodyHtml: `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${body.replace(/\n/g, "<br>")}</div>`,
           bodyText: body,
@@ -152,8 +173,16 @@ export function ComposeDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="nick">Nick (nick@signature-cleans.co.uk)</SelectItem>
-                  <SelectItem value="nelson">Nelson (nelson@signature-cleans.co.uk)</SelectItem>
+                  {fromOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option === "nick"
+                        ? "Nick"
+                        : option === "nelson"
+                          ? "Nelson"
+                          : "Hello"}
+                      @
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -186,6 +215,31 @@ export function ComposeDialog({
               placeholder="recipient@example.com"
               className="mt-1"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="email-cc">CC</Label>
+              <Input
+                id="email-cc"
+                type="email"
+                value={cc}
+                onChange={(e) => setCc(e.target.value)}
+                placeholder="cc@example.com"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="email-bcc">BCC</Label>
+              <Input
+                id="email-bcc"
+                type="email"
+                value={bcc}
+                onChange={(e) => setBcc(e.target.value)}
+                placeholder="bcc@example.com"
+                className="mt-1"
+              />
+            </div>
           </div>
 
           <div>

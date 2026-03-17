@@ -6,7 +6,7 @@ import type SMTPTransport from "nodemailer/lib/smtp-transport";
 // Types
 // ---------------------------------------------------------------------------
 
-type SenderAlias = "nick" | "nelson";
+type SenderAlias = "nick" | "nelson" | "hello";
 
 interface EmailAttachment {
   filename: string;
@@ -52,10 +52,20 @@ function getCredentials(alias: SenderAlias): SenderCredentials {
     return { email, password };
   }
 
-  const email = process.env.NELSON_EMAIL;
-  const password = process.env.NELSON_EMAIL_PASSWORD;
+  if (alias === "nelson") {
+    const email = process.env.NELSON_EMAIL;
+    const password = process.env.NELSON_EMAIL_PASSWORD;
+    if (!email || !password) {
+      throw new Error("NELSON_EMAIL and NELSON_EMAIL_PASSWORD must be set in environment variables");
+    }
+    return { email, password };
+  }
+
+  // hello
+  const email = process.env.HELLO_EMAIL;
+  const password = process.env.HELLO_EMAIL_PASSWORD;
   if (!email || !password) {
-    throw new Error("NELSON_EMAIL and NELSON_EMAIL_PASSWORD must be set in environment variables");
+    throw new Error("HELLO_EMAIL and HELLO_EMAIL_PASSWORD must be set in environment variables");
   }
   return { email, password };
 }
@@ -68,6 +78,7 @@ function getCredentials(alias: SenderAlias): SenderCredentials {
 const transporters: Record<SenderAlias, Transporter<SMTPTransport.SentMessageInfo> | null> = {
   nick: null,
   nelson: null,
+  hello: null,
 };
 
 function getTransporter(alias: SenderAlias): Transporter<SMTPTransport.SentMessageInfo> {

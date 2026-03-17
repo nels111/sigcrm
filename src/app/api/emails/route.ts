@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getSessionAccount } from "@/lib/auth-helpers";
+import { getSessionAccount, getAccessibleMailAccounts } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import {
@@ -25,21 +25,29 @@ export async function GET(request: NextRequest) {
     if (!session)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const account = await getSessionAccount();
+    const accessibleAccounts = await getAccessibleMailAccounts();
     const { searchParams } = new URL(request.url);
 
     // Pagination
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const limit = Math.min(
       100,
-      Math.max(1, parseInt(searchParams.get("limit") || "20", 10))
+      Math.max(1, parseInt(searchParams.get("limit") || "50", 10))
     );
     const skip = (page - 1) * limit;
 
-    // Build where clause — scope to logged-in user's mailAccount
+    // Build where clause — scope to logged-in user's accessible mailAccounts
     const where: Prisma.EmailWhereInput = {
-      mailAccount: account,
+      mailAccount: {
+        in: accessibleAccounts,
+      },
     };
+
+    // Allow filtering by specific mailAccount if requested
+    const mailAccount = searchParams.get("mailAccount");
+    if (mailAccount && accessibleAccounts.includes(mailAccount as any)) {
+      where.mailAccount = mailAccount as any;
+    }
 
     // Filter by direction (inbound / outbound)
     const direction = searchParams.get("direction");
@@ -133,10 +141,19 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     const { from, to, subject, bodyHtml } = body;
 
-    if (!from || (from !== "nick" && from !== "nelson")) {
+    if (!from || (from !== "nick" && from !== "nelson" && from !== "hello")) {
       return NextResponse.json(
-        { error: "from is required and must be 'nick' or 'nelson'" },
+        { error: "from is required and must be 'nick', 'nelson', or 'hello'" },
         { status: 400 }
+      );
+    }
+
+    // Verify user can send from this account
+    const accessibleAccounts = await getAccessibleMailAccounts();
+    if (!accessibleAccounts.includes(from as any)) {
+      return NextResponse.json(
+        { error: "You do not have permission to send from this account" },
+        { status: 403 }
       );
     }
 

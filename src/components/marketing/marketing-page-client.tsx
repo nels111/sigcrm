@@ -170,7 +170,7 @@ const DEFAULT_FORM: TemplateFormData = {
   sequenceNumber: null,
   subject: "",
   bodyHtml: "",
-  fromAddress: "nick@signature-cleans.co.uk",
+  fromAddress: process.env.NEXT_PUBLIC_NICK_EMAIL || "nick@signature-cleans.co.uk",
   isActive: true,
 };
 

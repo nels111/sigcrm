@@ -8,7 +8,7 @@ import { EmailDirection, EmailStatus, ActivityType } from "@prisma/client";
 // ---------------------------------------------------------------------------
 
 interface MailboxAccount {
-  alias: "nick" | "nelson";
+  alias: "nick" | "nelson" | "hello";
   email: string;
   password: string;
 }
@@ -44,6 +44,12 @@ function getMailboxAccounts(): MailboxAccount[] {
   const nelsonPassword = process.env.NELSON_EMAIL_PASSWORD;
   if (nelsonEmail && nelsonPassword) {
     accounts.push({ alias: "nelson", email: nelsonEmail, password: nelsonPassword });
+  }
+
+  const helloEmail = process.env.HELLO_EMAIL;
+  const helloPassword = process.env.HELLO_EMAIL_PASSWORD;
+  if (helloEmail && helloPassword) {
+    accounts.push({ alias: "hello", email: helloEmail, password: helloPassword });
   }
 
   if (accounts.length === 0) {

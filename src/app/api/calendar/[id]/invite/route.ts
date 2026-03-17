@@ -36,7 +36,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const dtStart = formatIcsDate(new Date(event.startTime));
     const dtEnd = formatIcsDate(new Date(event.endTime));
     const now = formatIcsDate(new Date());
-    const organizer = event.creator?.email || "nick@signature-cleans.co.uk";
+    const nickEmail = process.env.NICK_EMAIL || "nick@signature-cleans.co.uk";
+    const organizer = event.creator?.email || nickEmail;
 
     const ics = [
       "BEGIN:VCALENDAR",

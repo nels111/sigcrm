@@ -31,7 +31,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     const summary = event.title.replace(/[,;\\]/g, "\\$&");
     const description = (event.description || "").replace(/\n/g, "\\n").replace(/[,;\\]/g, "\\$&");
-    const organizer = event.creator?.email || "nick@signature-cleans.co.uk";
+    const nickEmail = process.env.NICK_EMAIL || "nick@signature-cleans.co.uk";
+    const organizer = event.creator?.email || nickEmail;
     const organizerName = event.creator?.name || "Signature Cleans";
 
     let attendee = "";

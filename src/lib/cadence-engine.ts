@@ -1,12 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
-import { CadenceStatus } from "@prisma/client";
+import { CadenceStatus, EmailDirection, ActivityType } from "@prisma/client";
 
 const CALENDLY_LINK =
   process.env.CALENDLY_LINK ||
   "https://calendly.com/nick-signaturecleans";
 
-const FROM_ADDRESS = "nick@signature-cleans.co.uk";
+const FROM_ADDRESS = process.env.HELLO_EMAIL || "hello@signature-cleans.co.uk";
+const MAX_EMAILS_PER_RUN = 20;
 
 interface CadenceResult {
   processed: number;
@@ -61,8 +62,21 @@ export async function runCadenceEngine(): Promise<CadenceResult> {
 
     console.log(`[CadenceEngine] Found ${leads.length} leads in active cadence`);
 
+    let emailsSentThisRun = 0;
+
     for (const lead of leads) {
       result.processed++;
+
+      // Rate limiting: max 20 emails per cron run
+      if (emailsSentThisRun >= MAX_EMAILS_PER_RUN) {
+        result.details.push({
+          leadId: lead.id,
+          companyName: lead.companyName,
+          action: "skipped",
+          reason: `Rate limit reached (${MAX_EMAILS_PER_RUN} emails max per run)`,
+        });
+        continue;
+      }
 
       // 2. Check pause triggers before sending
       // Check if cadenceStatus starts with 'Paused' or 'Stopped'
@@ -177,7 +191,7 @@ export async function runCadenceEngine(): Promise<CadenceResult> {
         // 7. Create Email record and Activity record
         await prisma.email.create({
           data: {
-            direction: "outbound",
+            direction: EmailDirection.outbound,
             fromAddress: FROM_ADDRESS,
             toAddress: lead.contactEmail,
             subject,
@@ -192,7 +206,7 @@ export async function runCadenceEngine(): Promise<CadenceResult> {
 
         await prisma.activity.create({
           data: {
-            activityType: "cadence_email_sent",
+            activityType: ActivityType.cadence_email_sent,
             subject: `Cadence email step ${nextStep} sent`,
             body: `Sent cadence email step ${nextStep} to ${lead.contactEmail}`,
             leadId: lead.id,
@@ -204,6 +218,7 @@ export async function runCadenceEngine(): Promise<CadenceResult> {
           },
         });
 
+        emailsSentThisRun++;
         result.sent++;
         result.details.push({
           leadId: lead.id,

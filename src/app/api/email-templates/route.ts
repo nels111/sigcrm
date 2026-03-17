@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
         bodyHtml: body.bodyHtml,
         templateType: body.templateType,
         sequenceNumber: body.sequenceNumber ?? null,
-        fromAddress: body.fromAddress ?? "nick@signature-cleans.co.uk",
+        fromAddress: body.fromAddress ?? (process.env.NICK_EMAIL || "nick@signature-cleans.co.uk"),
         isActive: body.isActive ?? true,
       },
     });
