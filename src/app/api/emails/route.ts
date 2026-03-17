@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
 
     // Allow filtering by specific mailAccount if requested
     const mailAccount = searchParams.get("mailAccount");
-    if (mailAccount && accessibleAccounts.includes(mailAccount as string)) {
+    if (mailAccount && (accessibleAccounts as string[]).includes(mailAccount)) {
       where.mailAccount = mailAccount;
     }
 
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
 
     // Verify user can send from this account
     const accessibleAccounts = await getAccessibleMailAccounts();
-    if (!accessibleAccounts.includes(from as string)) {
+    if (!(accessibleAccounts as string[]).includes(from)) {
       return NextResponse.json(
         { error: "You do not have permission to send from this account" },
         { status: 403 }
