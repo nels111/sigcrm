@@ -818,8 +818,7 @@ model EmailTemplate {
   name            String       @db.VarChar(255)
   subject         String       @db.VarChar(500)
   bodyHtml        String       @map("body_html")
-  // NOTE: This default is overridden by NICK_EMAIL env var at runtime
-  fromAddress     String       @default("nick@signature-cleans.co.uk") @map("from_address") @db.VarChar(255)
+  fromAddress     String       @default("hello@signature-cleans.co.uk") @map("from_address") @db.VarChar(255)
   isActive        Boolean      @default(true) @map("is_active")
   createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz

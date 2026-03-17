@@ -484,88 +484,51 @@ async function main() {
 </html>`,
   };
 
-  // Upsert all templates
-  for (const template of salesCadenceTemplates) {
-    await prisma.emailTemplate.upsert({
-      where: {
-        templateType_sequenceNumber: {
-          templateType: "sales_cadence",
-          sequenceNumber: template.sequenceNumber,
-        },
-      },
-      update: {},
-      create: {
-        templateType: "sales_cadence",
-        sequenceNumber: template.sequenceNumber,
-        name: template.name,
-        subject: template.subject,
-        bodyHtml: template.bodyHtml,
-        fromAddress,
-        isActive: true,
-      },
-    });
-  }
+  // Seed all templates using findFirst + create (no compound unique exists)
+  const allTemplates = [
+    ...salesCadenceTemplates.map((t) => ({ ...t, templateType: "sales_cadence" as const })),
+    ...quoteFollowUpTemplates.map((t) => ({ ...t, templateType: "quote_follow_up" as const })),
+    ...nurtureLoopTemplates.map((t) => ({ ...t, templateType: "nurture_loop" as const })),
+  ];
 
-  for (const template of quoteFollowUpTemplates) {
-    await prisma.emailTemplate.upsert({
+  for (const template of allTemplates) {
+    const existing = await prisma.emailTemplate.findFirst({
       where: {
-        templateType_sequenceNumber: {
-          templateType: "quote_follow_up",
-          sequenceNumber: template.sequenceNumber,
-        },
-      },
-      update: {},
-      create: {
-        templateType: "quote_follow_up",
+        templateType: template.templateType,
         sequenceNumber: template.sequenceNumber,
-        name: template.name,
-        subject: template.subject,
-        bodyHtml: template.bodyHtml,
-        fromAddress,
-        isActive: true,
       },
     });
-  }
-
-  for (const template of nurtureLoopTemplates) {
-    await prisma.emailTemplate.upsert({
-      where: {
-        templateType_sequenceNumber: {
-          templateType: "nurture_loop",
+    if (!existing) {
+      await prisma.emailTemplate.create({
+        data: {
+          templateType: template.templateType,
           sequenceNumber: template.sequenceNumber,
+          name: template.name,
+          subject: template.subject,
+          bodyHtml: template.bodyHtml,
+          fromAddress,
+          isActive: true,
         },
-      },
-      update: {},
-      create: {
-        templateType: "nurture_loop",
-        sequenceNumber: template.sequenceNumber,
-        name: template.name,
-        subject: template.subject,
-        bodyHtml: template.bodyHtml,
-        fromAddress,
-        isActive: true,
-      },
-    });
+      });
+    }
   }
 
   // Client welcome template (no sequenceNumber)
-  await prisma.emailTemplate.upsert({
-    where: {
-      templateType_sequenceNumber: {
-        templateType: "client_welcome",
-        sequenceNumber: null,
-      },
-    },
-    update: {},
-    create: {
-      templateType: "client_welcome",
-      name: clientWelcomeTemplate.name,
-      subject: clientWelcomeTemplate.subject,
-      bodyHtml: clientWelcomeTemplate.bodyHtml,
-      fromAddress,
-      isActive: true,
-    },
+  const existingWelcome = await prisma.emailTemplate.findFirst({
+    where: { templateType: "client_welcome" },
   });
+  if (!existingWelcome) {
+    await prisma.emailTemplate.create({
+      data: {
+        templateType: "client_welcome",
+        name: clientWelcomeTemplate.name,
+        subject: clientWelcomeTemplate.subject,
+        bodyHtml: clientWelcomeTemplate.bodyHtml,
+        fromAddress,
+        isActive: true,
+      },
+    });
+  }
 
   console.log("Created email templates (sales cadence, quote follow-up, nurture loop, client welcome)");
   console.log("Seeding complete!");
