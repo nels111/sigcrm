@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getSessionAccount, getAccessibleMailAccounts } from "@/lib/auth-helpers";
+import { getAccessibleMailAccounts } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import {
@@ -45,8 +45,8 @@ export async function GET(request: NextRequest) {
 
     // Allow filtering by specific mailAccount if requested
     const mailAccount = searchParams.get("mailAccount");
-    if (mailAccount && accessibleAccounts.includes(mailAccount as any)) {
-      where.mailAccount = mailAccount as any;
+    if (mailAccount && accessibleAccounts.includes(mailAccount as string)) {
+      where.mailAccount = mailAccount;
     }
 
     // Filter by direction (inbound / outbound)
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
 
     // Verify user can send from this account
     const accessibleAccounts = await getAccessibleMailAccounts();
-    if (!accessibleAccounts.includes(from as any)) {
+    if (!accessibleAccounts.includes(from as string)) {
       return NextResponse.json(
         { error: "You do not have permission to send from this account" },
         { status: 403 }

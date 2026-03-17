@@ -367,7 +367,7 @@ export function EmailsPageClient() {
   const [selectedMailbox, setSelectedMailbox] = useState<"nick" | "nelson" | "hello" | "all">("all");
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const [autoPolling, setAutoPolling] = useState(true);
+  const [autoPolling] = useState(true);
 
   // Load accessible mailboxes
   useEffect(() => {
